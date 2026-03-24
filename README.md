@@ -1,36 +1,90 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+This is the **LMX Sovereign Wallet** MVP — Phase 1 (foundation): Next.js App Router, Clerk auth, Prisma + PostgreSQL, and a protected app shell.
 
-## Getting Started
+## Stack
 
-First, run the development server:
+- [Next.js](https://nextjs.org) (App Router) + TypeScript
+- [Tailwind CSS](https://tailwindcss.com) v4 + [shadcn/ui](https://ui.shadcn.com)
+- [Clerk](https://clerk.com) authentication
+- [Prisma](https://www.prisma.io) ORM (PostgreSQL)
+- [Zod](https://zod.dev) validation
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Setup
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. **Install dependencies**
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+   ```bash
+   npm install
+   ```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+2. **Environment variables**
+
+   Copy `.env.example` to `.env.local` and fill in values (see [Environment variables](#environment-variables) below).
+
+3. **Database**
+
+   Create a PostgreSQL database and set `DATABASE_URL`.
+
+   Apply migrations:
+
+   ```bash
+   npx prisma migrate deploy
+   ```
+
+   For local development you can use:
+
+   ```bash
+   npx prisma migrate dev
+   ```
+
+4. **Clerk**
+
+   In the [Clerk Dashboard](https://dashboard.clerk.com), create an application and add the publishable and secret keys to `.env.local`.
+
+   Set paths (or rely on env defaults that match this repo):
+
+   - Sign-in URL: `/sign-in`
+   - Sign-up URL: `/sign-up`
+   - After sign-in / sign-up: `/dashboard`
+
+5. **Run the dev server**
+
+   ```bash
+   npm run dev
+   ```
+
+   Open [http://localhost:3000](http://localhost:3000). Unauthenticated users are sent to sign-in; after login, routes live under the authenticated shell (`/dashboard`, etc.).
+
+## Environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | Yes | PostgreSQL connection string for Prisma |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Yes | Clerk publishable key |
+| `CLERK_SECRET_KEY` | Yes | Clerk secret key |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | No | Default `/sign-in` |
+| `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | No | Default `/sign-up` |
+| `NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL` | No | Default `/dashboard` |
+| `NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL` | No | Default `/dashboard` |
+
+For hosted Postgres (e.g. Supabase, Neon, Railway), use the provider’s **pooled** or **direct** URL as recommended for Prisma; add `?sslmode=require` if required.
+
+## Deploy notes (Vercel + hosted Postgres)
+
+- Set the same env vars in Vercel.
+- Build command: `npm run build` (runs `prisma generate` then `next build`).
+- Run migrations against production from CI or your host: `npx prisma migrate deploy` with `DATABASE_URL` pointing at production.
+
+## Project layout (high level)
+
+- `app/` — routes, layouts, API route handlers
+- `components/` — UI (no direct database access)
+- `lib/` — shared utilities, Prisma client, Zod schemas
+- `server/services/` — domain logic
+- `server/repositories/` — Prisma data access
+- `prisma/` — schema and migrations
 
 ## Learn More
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [Next.js Documentation](https://nextjs.org/docs)
+- [Clerk + Next.js](https://clerk.com/docs/quickstarts/nextjs)
+- [Prisma Docs](https://www.prisma.io/docs)

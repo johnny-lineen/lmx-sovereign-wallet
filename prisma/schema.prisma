@@ -1,0 +1,35 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Application user, keyed by Clerk `userId` (not Clerk's internal DB).
+model User {
+  id          String        @id @default(cuid())
+  clerkUserId String        @unique
+  email       String?
+  name        String?
+  imageUrl    String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  identities  LMXIdentity[]
+}
+
+/// Sovereign identity node; one root identity per user is ensured at bootstrap.
+model LMXIdentity {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName String?
+  summary     String?
+  isRoot      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, isRoot])
+}
