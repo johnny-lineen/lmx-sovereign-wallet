@@ -7,29 +7,310 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum VaultItemType {
+  email
+  account
+  subscription
+  social_account
+  device
+  file_reference
+  payment_method_reference
+  credential_reference
+  identity_profile
+  custom
+}
+
+enum VaultItemStatus {
+  active
+  inactive
+  unknown
+  compromised
+  archived
+}
+
+enum VaultRelationType {
+  uses_email
+  owned_by
+  linked_to
+  pays_with
+  recovers_with
+  belongs_to
+  signs_in_with
+  duplicate_of
+  accesses
+  created_from
+}
+
+enum InsightType {
+  risk
+  insight
+  recommendation
+}
+
+enum InsightSeverity {
+  low
+  medium
+  high
+}
+
+enum UserActionStatus {
+  todo
+  in_progress
+  done
+  skipped
+}
+
+enum UserActionPriority {
+  low
+  medium
+  high
+}
+
+enum ImportJobStatus {
+  queued
+  running
+  completed
+  failed
+}
+
+enum ImportCandidateStatus {
+  pending
+  approved
+  rejected
+}
+
+/// High-signal email class inferred by deterministic rules (not AI).
+enum ImportCandidateSignal {
+  welcome_account
+  security_alert
+  password_reset
+  receipt_invoice
+  subscription_renewal
+  account_activity
+}
+
 /// Application user, keyed by Clerk `userId` (not Clerk's internal DB).
 model User {
-  id          String        @id @default(cuid())
-  clerkUserId String        @unique
-  email       String?
-  name        String?
-  imageUrl    String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  identities  LMXIdentity[]
+  id               String              @id @default(uuid())
+  clerkUserId      String              @unique
+  email            String?
+  name             String?
+  imageUrl         String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  identities       LMXIdentity[]
+  vaultItems       VaultItem[]
+  tags             Tag[]
+  relationships    VaultRelationship[]
+  agentQueryLogs   AgentQueryLog[]
+  insights         Insight[]
+  userActions      UserAction[]
+  gmailConnectors  GmailConnector[]
+  importJobs       ImportJob[]
+  importCandidates ImportCandidate[]
 }
 
 /// Sovereign identity node; one root identity per user is ensured at bootstrap.
 model LMXIdentity {
-  id          String   @id @default(cuid())
+  id          String      @id @default(uuid())
   userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   displayName String?
   summary     String?
-  isRoot      Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isRoot      Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  vaultItems  VaultItem[]
 
   @@index([userId])
   @@index([userId, isRoot])
+}
+
+model VaultItem {
+  id                String              @id @default(uuid())
+  userId            String
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lmxIdentityId     String?
+  lmxIdentity       LMXIdentity?        @relation(fields: [lmxIdentityId], references: [id], onDelete: SetNull)
+  type              VaultItemType
+  status            VaultItemStatus     @default(active)
+  title             String
+  summary           String?
+  provider          String?
+  metadata          Json?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  outgoingRelations           VaultRelationship[] @relation("VaultRelationFrom")
+  incomingRelations           VaultRelationship[] @relation("VaultRelationTo")
+  itemTags                    VaultItemTag[]
+  importJobsAsProfileEmail    ImportJob[]         @relation("ImportJobProfileEmail")
+  createdFromImportCandidates ImportCandidate[]   @relation("ImportCreatedVaultItem")
+
+  @@index([userId])
+  @@index([userId, type])
+  @@index([userId, status])
+  @@index([lmxIdentityId])
+}
+
+/// Connects two vault items; `userId` matches the owning user of both endpoints (enforced in application layer).
+model VaultRelationship {
+  id           String            @id @default(uuid())
+  userId       String
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fromItemId   String
+  fromItem     VaultItem         @relation("VaultRelationFrom", fields: [fromItemId], references: [id], onDelete: Cascade)
+  toItemId     String
+  toItem       VaultItem         @relation("VaultRelationTo", fields: [toItemId], references: [id], onDelete: Cascade)
+  relationType VaultRelationType
+  metadata     Json?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([userId])
+  @@index([fromItemId])
+  @@index([toItemId])
+  @@index([userId, relationType])
+}
+
+model Tag {
+  id        String         @id @default(uuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  itemTags  VaultItemTag[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model VaultItemTag {
+  vaultItemId String
+  vaultItem   VaultItem @relation(fields: [vaultItemId], references: [id], onDelete: Cascade)
+  tagId       String
+  tag         Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@id([vaultItemId, tagId])
+  @@index([tagId])
+  @@index([vaultItemId])
+}
+
+model AgentQueryLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  query     String   @db.Text
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, createdAt])
+}
+
+/// Rule-generated, deterministic insights for a user’s vault graph (refreshed by the insight engine).
+model Insight {
+  id             String          @id @default(uuid())
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type           InsightType
+  title          String
+  description    String          @db.Text
+  severity       InsightSeverity
+  relatedItemIds String[]
+  createdAt      DateTime        @default(now())
+  userActions    UserAction[]
+
+  @@index([userId])
+  @@index([userId, createdAt])
+}
+
+/// Advisory-only remediation action generated from deterministic insights.
+model UserAction {
+  id             String             @id @default(uuid())
+  userId         String
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actionKey      String
+  insightId      String?
+  insight        Insight?           @relation(fields: [insightId], references: [id], onDelete: SetNull)
+  title          String
+  description    String             @db.Text
+  status         UserActionStatus   @default(todo)
+  priority       UserActionPriority @default(medium)
+  relatedItemIds String[]
+  metadata       Json?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  completedAt    DateTime?
+
+  @@index([userId])
+  @@unique([userId, actionKey])
+  @@index([userId, status])
+  @@index([userId, priority])
+}
+
+/// Connected Gmail account (OAuth refresh token). Tokens are sensitive — encrypt at rest in production.
+model GmailConnector {
+  id                   String       @id @default(uuid())
+  userId               String
+  user                 User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gmailAddress         String
+  refreshToken         String       @db.Text
+  accessToken          String?      @db.Text
+  accessTokenExpiresAt DateTime?
+  scopes               String?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  importJobs           ImportJob[]
+
+  @@unique([userId, gmailAddress])
+  @@index([userId])
+}
+
+/// One Gmail scan / ingestion run for a user.
+model ImportJob {
+  id                 String          @id @default(uuid())
+  userId             String
+  user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gmailConnectorId   String
+  gmailConnector     GmailConnector  @relation(fields: [gmailConnectorId], references: [id], onDelete: Cascade)
+  status             ImportJobStatus @default(queued)
+  /// Optional vault email item this import was run in context of (for linking approved items).
+  profileEmailItemId String?
+  profileEmailItem   VaultItem?      @relation("ImportJobProfileEmail", fields: [profileEmailItemId], references: [id], onDelete: SetNull)
+  startedAt          DateTime        @default(now())
+  completedAt        DateTime?
+  errorMessage       String?         @db.Text
+  metadata           Json?
+  candidates         ImportCandidate[]
+
+  @@index([userId])
+  @@index([userId, status])
+  @@index([gmailConnectorId])
+}
+
+/// Extracted service/account hint awaiting user review — never auto-promoted to vault.
+model ImportCandidate {
+  id                 String                 @id @default(uuid())
+  userId             String
+  user               User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  importJobId        String
+  importJob          ImportJob              @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+  status             ImportCandidateStatus  @default(pending)
+  signal             ImportCandidateSignal
+  suggestedType      VaultItemType
+  title              String
+  provider           String?
+  providerDomain     String?
+  evidence           Json
+  dedupeKey          String
+  createdVaultItemId String?
+  createdVaultItem   VaultItem?             @relation("ImportCreatedVaultItem", fields: [createdVaultItemId], references: [id], onDelete: SetNull)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, status])
+  @@index([importJobId])
 }

@@ -1,22 +1,26 @@
+import { ActionCenter } from "@/components/actions/action-center";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 
 export default function AgentPage() {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Agent</CardTitle>
-        <p className="text-sm text-muted-foreground">
-          The sovereign agent will run here with your scoped context.
-        </p>
-      </CardHeader>
-      <CardContent>
-        <Textarea
-          readOnly
-          placeholder="Agent logic is not connected in Phase 1."
-          className="min-h-[160px] resize-none bg-muted/30"
-        />
-      </CardContent>
-    </Card>
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Agent</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Advisory-only control surface for transparent digital-identity hardening.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <Textarea
+            readOnly
+            value="Your recommended remediation actions are generated from deterministic insights and tracked below."
+            className="min-h-[120px] resize-none bg-muted/30"
+          />
+        </CardContent>
+      </Card>
+      <ActionCenter />
+    </div>
   );
 }

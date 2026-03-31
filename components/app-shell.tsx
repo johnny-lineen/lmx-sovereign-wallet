@@ -34,9 +34,15 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const title = titleProp ?? titles[pathname] ?? "LMX Wallet";
+  const isGraphWorkspace = pathname === "/graph" || pathname.startsWith("/graph/");
 
   return (
-    <div className="flex min-h-full flex-col md:flex-row">
+    <div
+      className={cn(
+        "flex flex-col md:flex-row",
+        isGraphWorkspace ? "min-h-dvh" : "min-h-full",
+      )}
+    >
       <aside className="hidden w-56 shrink-0 border-b border-border bg-sidebar md:flex md:flex-col md:border-b-0 md:border-r">
         <div className="flex h-14 items-center border-b border-sidebar-border px-4">
           <Link href="/dashboard" className="font-semibold tracking-tight text-sidebar-foreground">
@@ -65,8 +71,13 @@ export function AppShell({
         </nav>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-10 flex h-14 items-center justify-between gap-4 border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:px-6">
+      <div
+        className={cn(
+          "flex min-w-0 min-h-0 flex-1 flex-col",
+          isGraphWorkspace && "md:min-h-dvh",
+        )}
+      >
+        <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <Link
               href="/dashboard"
@@ -97,7 +108,14 @@ export function AppShell({
             <UserButton />
           </div>
         </header>
-        <main className="flex-1 p-4 md:p-6">{children}</main>
+        <main
+          className={cn(
+            "min-h-0 flex-1",
+            isGraphWorkspace ? "flex flex-col overflow-hidden p-0" : "p-4 md:p-6",
+          )}
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

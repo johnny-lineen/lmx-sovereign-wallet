@@ -73,6 +73,20 @@ For hosted Postgres (e.g. Supabase, Neon, Railway), use the provider’s **poole
 - Set the same env vars in Vercel.
 - Build command: `npm run build` (runs `prisma generate` then `next build`).
 - Run migrations against production from CI or your host: `npx prisma migrate deploy` with `DATABASE_URL` pointing at production.
+- Health check endpoint: `GET /api/health`.
+
+## Production readiness docs
+
+- Env separation matrix: `docs/production-env-matrix.md`
+- Rollback runbook: `docs/rollback-runbook.md`
+- Test user launch checklist: `docs/test-user-launch-checklist.md`
+
+## Quality gates
+
+- `npm run lint`
+- `npm run typecheck`
+- `npm run test`
+- `npm run check` (runs all gates)
 
 ## Project layout (high level)
 

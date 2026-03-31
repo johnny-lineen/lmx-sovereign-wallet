@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import { profileFromClerkUser } from "@/lib/clerk-profile";
-import { ensureUserWithRootIdentity } from "@/server/services/user-bootstrap.service";
+import { ensureUserAndRootLMXIdentity } from "@/server/services/identity-bootstrap.service";
 
 export default async function AuthenticatedAppLayout({
   children,
@@ -16,7 +16,7 @@ export default async function AuthenticatedAppLayout({
   }
 
   const clerkUser = await currentUser();
-  await ensureUserWithRootIdentity(userId, profileFromClerkUser(clerkUser));
+  await ensureUserAndRootLMXIdentity(userId, profileFromClerkUser(clerkUser));
 
   return <AppShell>{children}</AppShell>;
 }

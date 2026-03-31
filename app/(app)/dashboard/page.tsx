@@ -1,9 +1,17 @@
+import { ActionCenter } from "@/components/actions/action-center";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { IdentitySummaryCard, IdentitySummaryEmpty } from "@/components/dashboard/identity-summary-card";
+import { DashboardInsightsPreview } from "@/components/insights/dashboard-insights-preview";
 import { SectionPlaceholder } from "@/components/placeholders/section-placeholder";
+import Link from "next/link";
 import * as identityService from "@/server/services/identity.service";
+import * as insightService from "@/server/services/insight.service";
+import * as vaultService from "@/server/services/vault.service";
 import { auth } from "@clerk/nextjs/server";
+
+export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const { userId } = await auth();
@@ -11,65 +19,84 @@ export default async function DashboardPage() {
     return null;
   }
 
-  const identity = await identityService.getRootIdentityForClerkUser(userId);
+  const [identity, vaultItemCount, insights] = await Promise.all([
+    identityService.getRootIdentityForClerkUser(userId),
+    vaultService.countVaultItemsForClerkUser(userId),
+    insightService.generateInsightsForClerkUser(userId),
+  ]);
 
   return (
     <div className="space-y-8">
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>
-        <p className="text-muted-foreground">Phase 1 foundation — placeholders for upcoming features.</p>
+        <p className="text-muted-foreground">
+          Understand your footprint fast: ingest, view your graph, and prioritize actions.
+        </p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {identity ? <IdentitySummaryCard identity={identity} /> : <IdentitySummaryEmpty />}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Linked nodes</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Vault items</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold">—</p>
-            <p className="text-xs text-muted-foreground">Placeholder KPI</p>
+            <p className="text-3xl font-semibold">{vaultItemCount}</p>
+            <p className="text-xs text-muted-foreground">Stored identity graph nodes</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Signals</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Active insights</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold">—</p>
-            <p className="text-xs text-muted-foreground">Placeholder KPI</p>
+            <p className="text-3xl font-semibold">{insights === null ? "—" : insights.length}</p>
+            <p className="text-xs text-muted-foreground">From the rule engine (refreshed on load)</p>
           </CardContent>
         </Card>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <SectionPlaceholder
-          title="Graph preview"
-          description="Identity graph visualization will appear here."
-          emptyMessage="Graph rendering is not enabled in Phase 1."
-        />
-        <SectionPlaceholder
-          title="Top insights"
-          description="Ranked insights from your identity graph."
-          emptyMessage="No insights yet — Phase 2 will populate this section."
-        />
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Graph view</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Open your relationship graph to see how inboxes, accounts, and subscriptions connect.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              The graph includes type color mapping, relationship labels, and node-level explainability.
+            </p>
+            <Button size="sm" nativeButton={false} render={<Link href="/graph" />}>
+              Open Graph
+            </Button>
+          </CardContent>
+        </Card>
+        {insights === null ? (
+          <SectionPlaceholder
+            title="Top insights"
+            description="Ranked insights from your identity graph."
+            emptyMessage="Insights could not be loaded."
+          />
+        ) : (
+          <DashboardInsightsPreview insights={insights} />
+        )}
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Agent</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Natural language control surface (not wired in Phase 1).
+            Advisory action planning surface for your identity graph.
           </p>
         </CardHeader>
         <CardContent>
-          <Textarea
-            readOnly
-            placeholder="Ask the sovereign agent about your identity graph…"
-            className="min-h-[100px] resize-none bg-muted/30"
-          />
+          <Textarea readOnly value="Use the Action Center below to execute prioritized remediation steps." className="min-h-[100px] resize-none bg-muted/30" />
         </CardContent>
       </Card>
+
+      <ActionCenter />
     </div>
   );
 }

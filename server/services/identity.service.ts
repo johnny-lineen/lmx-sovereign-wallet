@@ -11,7 +11,7 @@ export type IdentityDTO = {
   updatedAt: string;
 };
 
-function toDTO(row: {
+export function identityRowToDTO(row: {
   id: string;
   displayName: string | null;
   summary: string | null;
@@ -36,7 +36,7 @@ export async function getRootIdentityForClerkUser(clerkUserId: string): Promise<
   const identity = await identityRepo.findRootIdentityByUserId(user.id);
   if (!identity) return null;
 
-  return toDTO(identity);
+  return identityRowToDTO(identity);
 }
 
 export async function updateRootIdentityForClerkUser(
@@ -61,5 +61,5 @@ export async function updateRootIdentityForClerkUser(
 
   if (!updated) return { ok: false, code: "NOT_FOUND" };
 
-  return { ok: true, identity: toDTO(updated) };
+  return { ok: true, identity: identityRowToDTO(updated) };
 }

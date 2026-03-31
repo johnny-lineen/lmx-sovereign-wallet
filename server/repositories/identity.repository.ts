@@ -8,6 +8,12 @@ export async function findRootIdentityByUserId(userId: string): Promise<LMXIdent
   });
 }
 
+export async function findIdentityByIdForUser(userId: string, id: string): Promise<LMXIdentity | null> {
+  return prisma.lMXIdentity.findFirst({
+    where: { id, userId },
+  });
+}
+
 export async function updateIdentityForUser(
   id: string,
   userId: string,

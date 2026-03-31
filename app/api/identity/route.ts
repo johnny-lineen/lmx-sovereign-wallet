@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 
 import { profileFromClerkUser } from "@/lib/clerk-profile";
 import { identityUpdateSchema } from "@/lib/validations/identity";
-import * as identityService from "@/server/services/identity.service";
-import { ensureUserWithRootIdentity } from "@/server/services/user-bootstrap.service";
+import { identityRowToDTO, updateRootIdentityForClerkUser } from "@/server/services/identity.service";
+import { ensureUserAndRootLMXIdentity } from "@/server/services/identity-bootstrap.service";
 
 export async function GET() {
   const { userId } = await auth();
@@ -13,14 +13,9 @@ export async function GET() {
   }
 
   const clerkUser = await currentUser();
-  await ensureUserWithRootIdentity(userId, profileFromClerkUser(clerkUser));
+  const { lmxIdentity } = await ensureUserAndRootLMXIdentity(userId, profileFromClerkUser(clerkUser));
 
-  const identity = await identityService.getRootIdentityForClerkUser(userId);
-  if (!identity) {
-    return NextResponse.json({ error: "Identity not found" }, { status: 404 });
-  }
-
-  return NextResponse.json({ identity });
+  return NextResponse.json({ identity: identityRowToDTO(lmxIdentity) });
 }
 
 export async function PATCH(request: Request) {
@@ -30,7 +25,7 @@ export async function PATCH(request: Request) {
   }
 
   const clerkUser = await currentUser();
-  await ensureUserWithRootIdentity(userId, profileFromClerkUser(clerkUser));
+  await ensureUserAndRootLMXIdentity(userId, profileFromClerkUser(clerkUser));
 
   let body: unknown;
   try {
@@ -47,7 +42,7 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const result = await identityService.updateRootIdentityForClerkUser(userId, parsed.data);
+  const result = await updateRootIdentityForClerkUser(userId, parsed.data);
   if (!result.ok) {
     return NextResponse.json({ error: "Identity not found" }, { status: 404 });
   }

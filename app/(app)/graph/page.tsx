@@ -1,11 +1,5 @@
-import { SectionPlaceholder } from "@/components/placeholders/section-placeholder";
+import { VaultGraphView } from "@/components/graph/vault-graph-view";
 
 export default function GraphPage() {
-  return (
-    <SectionPlaceholder
-      title="Identity graph"
-      description="Interactive graph of people, orgs, and relationships."
-      emptyMessage="Graph rendering and queries are not implemented in Phase 1."
-    />
-  );
+  return <VaultGraphView />;
 }
