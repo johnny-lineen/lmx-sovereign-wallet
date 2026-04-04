@@ -7,6 +7,7 @@ import type { z } from "zod";
 import { ChevronLeft, ChevronRight, Info, Maximize2, RotateCcw, Sparkles, Tags, X } from "lucide-react";
 
 import type { GraphEdgePayload, GraphNodePayload, GraphPayload } from "@/lib/graph-payload";
+import { computeGraphLayoutTargets, computeUndirectedDegrees } from "@/lib/graph-layout";
 import { VAULT_DATA_CHANGED_EVENT } from "@/lib/vault-changed-event";
 import { vaultItemTypeSchema } from "@/lib/validations/vault";
 import { cn } from "@/lib/utils";
@@ -18,6 +19,8 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { forceNodeFill, forceNodeVal } from "./vault-graph-force-palette";
+
+type InsightMode = "none" | "risk" | "duplicates" | "disconnected";
 import type { FGLink, FGNode, KnowledgeGraphHandle } from "./vault-knowledge-graph-canvas";
 import { humanizeVaultType } from "./vault-graph-theme";
 
@@ -87,52 +90,68 @@ function appendCohesionEmailLinks(nodes: FGNode[], vaultLinks: FGLink[]): FGLink
   return [...vaultLinks, ...extra];
 }
 
-function pairKeyUndirected(a: string, b: string): string {
-  return a < b ? `${a}\0${b}` : `${b}\0${a}`;
-}
-
-/**
- * Soft star from one median email so every inbox node shares a common anchor and stays in a tight cloud.
- */
-function appendGlobalEmailAnchorLinks(nodes: FGNode[], links: FGLink[]): FGLink[] {
-  const emails = nodes.filter((n) => n.type === "email").map((n) => n.id).sort();
-  if (emails.length < 2) return links;
-
-  const seen = new Set<string>();
-  for (const l of links) {
-    seen.add(pairKeyUndirected(l.source, l.target));
-  }
-
-  const center = emails[Math.floor(emails.length / 2)]!;
-  const extra: FGLink[] = [];
-  for (const id of emails) {
-    if (id === center) continue;
-    const key = pairKeyUndirected(id, center);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const a = id < center ? id : center;
-    const b = id < center ? center : id;
-    extra.push({
-      id: `__cohesionGlobal__${key}`,
-      source: a,
-      target: b,
-      label: "",
-      kind: "cohesionGlobal",
-    });
-  }
-  return [...links, ...extra];
-}
-
-function jitterGraphSeeds(nodes: FGNode[]) {
-  for (const n of nodes) {
-    if (n.type === "email") {
-      n.x = (Math.random() - 0.5) * 36;
-      n.y = (Math.random() - 0.5) * 36;
-    } else {
-      n.x = (Math.random() - 0.5) * 72;
-      n.y = (Math.random() - 0.5) * 72;
+function resolveAnchorForFiltered(
+  payloadAnchor: string | null | undefined,
+  emailNodes: GraphNodePayload[],
+  degree: Map<string, number>,
+): string | null {
+  if (payloadAnchor && emailNodes.some((n) => n.id === payloadAnchor)) return payloadAnchor;
+  if (emailNodes.length === 0) return null;
+  let best = emailNodes[0]!.id;
+  let bestD = -1;
+  for (const n of emailNodes) {
+    const d = degree.get(n.id) ?? 0;
+    if (d > bestD) {
+      bestD = d;
+      best = n.id;
     }
   }
+  return best;
+}
+
+function riskHighlightIds(
+  nodes: GraphNodePayload[],
+  vaultEdges: GraphEdgePayload[],
+  clusters: GraphPayload["overview"]["highFragmentationClusters"],
+): Set<string> {
+  const ids = new Set(nodes.map((n) => n.id));
+  const degree = computeUndirectedDegrees(ids, vaultEdges);
+  const sorted = [...degree.values()].sort((a, b) => a - b);
+  const p90 = sorted.length
+    ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))]!
+    : 0;
+  const threshold = Math.max(4, p90);
+  const s = new Set<string>();
+  for (const [id, d] of degree) {
+    if (d >= threshold) s.add(id);
+  }
+  const clusterProviders = new Set(clusters.map((c) => c.provider.trim().toLowerCase()));
+  for (const n of nodes) {
+    const np = (n.provider ?? "").trim().toLowerCase();
+    if (clusterProviders.has(np)) s.add(n.id);
+  }
+  return s;
+}
+
+function disconnectedHighlightIds(
+  nodes: GraphNodePayload[],
+  vaultEdges: GraphEdgePayload[],
+): Set<string> {
+  const ids = new Set(nodes.map((n) => n.id));
+  const degree = computeUndirectedDegrees(ids, vaultEdges);
+  const s = new Set<string>();
+  for (const n of nodes) {
+    if ((degree.get(n.id) ?? 0) === 0) s.add(n.id);
+  }
+  return s;
+}
+
+function duplicateHighlightIds(nodes: GraphNodePayload[]): Set<string> {
+  const s = new Set<string>();
+  for (const n of nodes) {
+    if (n.mergeGroupSize > 1) s.add(n.id);
+  }
+  return s;
 }
 
 function neighborIdSet(selectedId: string | null, edges: GraphEdgePayload[]): Set<string> {
@@ -307,6 +326,8 @@ function GraphToolbar({
   onToggleLinkLabels,
   showDerivedLinks,
   onToggleDerivedLinks,
+  insightMode,
+  onInsightModeChange,
 }: {
   graphRef: React.RefObject<KnowledgeGraphHandle | null>;
   onResetSelection: () => void;
@@ -314,59 +335,87 @@ function GraphToolbar({
   onToggleLinkLabels: () => void;
   showDerivedLinks: boolean;
   onToggleDerivedLinks: () => void;
+  insightMode: InsightMode;
+  onInsightModeChange: (m: InsightMode) => void;
 }) {
+  const insightChip = (mode: InsightMode, label: string, title: string) => (
+    <Button
+      type="button"
+      size="sm"
+      variant={insightMode === mode ? "secondary" : "ghost"}
+      className="h-8 px-2 text-xs font-medium text-zinc-300"
+      title={title}
+      onClick={() => onInsightModeChange(insightMode === mode ? "none" : mode)}
+    >
+      {label}
+    </Button>
+  );
+
   return (
-    <div className={cn(floatingBarClass)}>
-      <Button
-        type="button"
-        size="icon-sm"
-        variant="ghost"
-        className="size-8 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50"
-        onClick={() => graphRef.current?.zoomToFit()}
-        title="Fit graph"
-      >
-        <Maximize2 className="size-3.5" />
-      </Button>
-      <Button
-        type="button"
-        size="icon-sm"
-        variant="ghost"
-        className="size-8 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50"
-        onClick={onResetSelection}
-        title="Clear selection & fit"
-      >
-        <RotateCcw className="size-3.5" />
-      </Button>
-      <Separator orientation="vertical" className="mx-0.5 h-5 bg-zinc-700" />
-      <Button
-        type="button"
-        size="sm"
-        variant={showAllLinkLabels ? "secondary" : "ghost"}
-        className="h-8 gap-1 px-2 text-xs font-medium text-zinc-300"
-        onClick={onToggleLinkLabels}
-        title={showAllLinkLabels ? "Hide link labels" : "Show link labels (hover still works)"}
-      >
-        <Tags className="size-3.5" />
-        Links
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant={showDerivedLinks ? "secondary" : "ghost"}
-        className="h-8 px-2 text-xs font-medium text-zinc-300"
-        onClick={onToggleDerivedLinks}
-        title="Toggle layout helper links (dashed)"
-      >
-        Layout
-      </Button>
+    <div className="flex flex-col items-end gap-1.5">
+      <div className={cn(floatingBarClass)}>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          className="size-8 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50"
+          onClick={() => graphRef.current?.zoomToFit()}
+          title="Fit graph"
+        >
+          <Maximize2 className="size-3.5" />
+        </Button>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          className="size-8 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50"
+          onClick={onResetSelection}
+          title="Clear selection & fit"
+        >
+          <RotateCcw className="size-3.5" />
+        </Button>
+        <Separator orientation="vertical" className="mx-0.5 h-5 bg-zinc-700" />
+        <Button
+          type="button"
+          size="sm"
+          variant={showAllLinkLabels ? "secondary" : "ghost"}
+          className="h-8 gap-1 px-2 text-xs font-medium text-zinc-300"
+          onClick={onToggleLinkLabels}
+          title={showAllLinkLabels ? "Hide link labels" : "Show link labels (hover still works)"}
+        >
+          <Tags className="size-3.5" />
+          Links
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={showDerivedLinks ? "secondary" : "ghost"}
+          className="h-8 px-2 text-xs font-medium text-zinc-300"
+          onClick={onToggleDerivedLinks}
+          title="Optional dashed links between inboxes that share an account (extra pull)"
+        >
+          Cohesion
+        </Button>
+      </div>
+      <div className={cn(floatingBarClass, "max-w-[min(100%,22rem)] flex-wrap justify-end")}>
+        {insightChip("risk", "Risk", "Highlight highly connected nodes and fragmented provider clusters")}
+        {insightChip("duplicates", "Duplicates", "Highlight nodes merged from multiple vault rows")}
+        {insightChip("disconnected", "Disconnected", "Highlight nodes with no relationships in the current view")}
+      </div>
     </div>
   );
 }
 
-function GraphLegend() {
-  const legendTypes = ["email", "account", "social_account", "subscription", "identity_profile"] as const;
+function GraphLegendCard() {
+  const legendTypes = [
+    "email",
+    "account",
+    "subscription",
+    "device",
+    "payment_method_reference",
+  ] as const;
   return (
-    <div className="pointer-events-auto w-[min(20rem,calc(100vw-1.5rem))] space-y-2 rounded-xl border border-zinc-700/70 bg-zinc-950/95 p-3 shadow-xl backdrop-blur-md">
+    <div className="w-[min(20rem,calc(100vw-1.5rem))] space-y-2 rounded-xl border border-zinc-700/70 bg-zinc-950/95 p-3 shadow-xl backdrop-blur-md">
       <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
         <Info className="size-3.5" />
         How to read this graph
@@ -374,16 +423,20 @@ function GraphLegend() {
       <div className="space-y-1.5 text-xs text-zinc-300">
         {legendTypes.map((type) => (
           <div key={type} className="flex items-center gap-2">
-            <span className="size-2.5 rounded-full" style={{ backgroundColor: forceNodeFill(type) }} />
-            <span>{humanizeVaultType(type)}</span>
+            <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: forceNodeFill(type) }} />
+            <span>
+              {type === "account"
+                ? "Account (incl. social & identity profile)"
+                : humanizeVaultType(type)}
+            </span>
           </div>
         ))}
       </div>
       <Separator className="bg-zinc-800" />
       <div className="space-y-1 text-[11px] text-zinc-400">
-        <p>Solid lines are real vault relationships.</p>
-        <p>Dashed lines are layout helpers so related email clusters stay readable.</p>
-        <p>Hover links, or use the Links toggle, to view relationship labels.</p>
+        <p>Center = your primary email when it matches your profile; larger dots = more connections.</p>
+        <p>Nodes spread within each provider wedge; solid lines are vault relationships (brighter on hover).</p>
+        <p>Optional dashed cohesion links pull shared inboxes together; use Risk / Disconnected for quick reads.</p>
       </div>
     </div>
   );
@@ -433,7 +486,9 @@ function GraphWorkspace({
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(() => payload.nodes.length < 18);
   const [showAllLinkLabels, setShowAllLinkLabels] = useState(false);
-  const [showDerivedLinks, setShowDerivedLinks] = useState(true);
+  const [showDerivedLinks, setShowDerivedLinks] = useState(false);
+  const [insightMode, setInsightMode] = useState<InsightMode>("none");
+  const [legendOpen, setLegendOpen] = useState(false);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -451,27 +506,66 @@ function GraphWorkspace({
   const layoutKey = useMemo(() => {
     if (emptyVault) return "empty";
     const ids = filtered.nodesFiltered.map((n) => n.id).sort().join("\0");
-    return `${typeFilter}\0${search}\0${ids}`;
-  }, [emptyVault, filtered.nodesFiltered, typeFilter, search]);
+    return `${typeFilter}\0${providerFilter}\0${search}\0${ids}`;
+  }, [emptyVault, filtered.nodesFiltered, typeFilter, providerFilter, search]);
 
   const graphData = useMemo(() => {
-    const nodes: FGNode[] = filtered.nodesFiltered.map((n) => ({
-      ...n,
-      id: n.id,
-      val: forceNodeVal(n.type),
-    }));
-    jitterGraphSeeds(nodes);
+    const nodeIds = new Set(filtered.nodesFiltered.map((n) => n.id));
+    const degree = computeUndirectedDegrees(nodeIds, filtered.edgesFiltered);
+    const emails = filtered.nodesFiltered.filter((n) => n.type === "email");
+    const anchorId = resolveAnchorForFiltered(
+      payload.overview.anchorEmailNodeId,
+      emails,
+      degree,
+    );
+    const layout = computeGraphLayoutTargets(
+      filtered.nodesFiltered,
+      filtered.edgesFiltered,
+      anchorId,
+    );
+
+    const nodes: FGNode[] = filtered.nodesFiltered.map((n) => {
+      const d = degree.get(n.id) ?? 0;
+      const t = layout.get(n.id) ?? { tx: 0, ty: 0 };
+      const isAnchor = anchorId === n.id;
+      return {
+        ...n,
+        id: n.id,
+        mergeGroupSize: n.mergeGroupSize ?? 1,
+        graphDegree: d,
+        val: forceNodeVal(n.type, d),
+        layoutTx: t.tx,
+        layoutTy: t.ty,
+        isLayoutAnchor: isAnchor,
+        ...(isAnchor ? { fx: 0, fy: 0 } : {}),
+      };
+    });
+
     const vaultLinks: FGLink[] = filtered.edgesFiltered.map((e) => ({
       id: e.id,
       source: e.source,
       target: e.target,
       label: e.label,
-      kind: "vault",
+      kind: "vault" as const,
     }));
-    const allLinks = appendGlobalEmailAnchorLinks(nodes, appendCohesionEmailLinks(nodes, vaultLinks));
-    const links = showDerivedLinks ? allLinks : allLinks.filter((l) => l.kind === "vault");
+    let links = appendCohesionEmailLinks(nodes, vaultLinks);
+    if (!showDerivedLinks) {
+      links = links.filter((l) => l.kind === "vault");
+    }
     return { nodes, links };
-  }, [filtered, showDerivedLinks]);
+  }, [filtered, showDerivedLinks, payload.overview.anchorEmailNodeId]);
+
+  const insightHighlightIds = useMemo(() => {
+    const { nodesFiltered, edgesFiltered } = filtered;
+    if (insightMode === "risk") {
+      return riskHighlightIds(nodesFiltered, edgesFiltered, payload.overview.highFragmentationClusters);
+    }
+    if (insightMode === "duplicates") return duplicateHighlightIds(nodesFiltered);
+    if (insightMode === "disconnected") {
+      return disconnectedHighlightIds(nodesFiltered, edgesFiltered);
+    }
+    return new Set<string>();
+  }, [insightMode, filtered, payload.overview.highFragmentationClusters]);
 
   const highlightIds = useMemo(() => {
     const s = new Set<string>();
@@ -503,6 +597,7 @@ function GraphWorkspace({
   const resetView = useCallback(() => {
     onSelectId(null);
     setHoveredNodeId(null);
+    setInsightMode("none");
     requestAnimationFrame(() => graphRef.current?.zoomToFit());
   }, [onSelectId]);
 
@@ -519,6 +614,8 @@ function GraphWorkspace({
           onSelectId={onSelectId}
           highlightIds={highlightIds}
           dimUnrelated={dimUnrelated}
+          insightDimActive={insightMode !== "none" && insightHighlightIds.size > 0}
+          insightHighlightIds={insightHighlightIds}
           showAllLinkLabels={showAllLinkLabels}
         />
       ) : null}
@@ -611,7 +708,25 @@ function GraphWorkspace({
                 </div>
               </div>
             ) : null}
-            <GraphLegend />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="w-fit gap-1 rounded-full border-zinc-700 bg-zinc-950/90 text-zinc-200 backdrop-blur-md hover:bg-zinc-900"
+              onClick={() => setLegendOpen((v) => !v)}
+            >
+              {legendOpen ? (
+                <ChevronLeft className="size-3.5" />
+              ) : (
+                <ChevronRight className="size-3.5" />
+              )}
+              Graph guide
+            </Button>
+            {legendOpen ? (
+              <div className="pointer-events-auto">
+                <GraphLegendCard />
+              </div>
+            ) : null}
           </div>
 
           <div className="flex max-h-[calc(100%-0.5rem)] flex-col items-end gap-2 overflow-y-auto">
@@ -622,6 +737,8 @@ function GraphWorkspace({
               onToggleLinkLabels={() => setShowAllLinkLabels((v) => !v)}
               showDerivedLinks={showDerivedLinks}
               onToggleDerivedLinks={() => setShowDerivedLinks((v) => !v)}
+              insightMode={insightMode}
+              onInsightModeChange={setInsightMode}
             />
             {selectedNode ? (
               <div className="pointer-events-auto">
@@ -701,17 +818,25 @@ export function VaultGraphView() {
         return;
       }
       const data = (await res.json()) as GraphPayload;
+      const ov = data.overview ?? {
+        totalNodes: 0,
+        totalEdges: 0,
+        accountCount: 0,
+        subscriptionCount: 0,
+        emailCount: 0,
+        distinctProviders: 0,
+        highFragmentationClusters: [] as GraphPayload["overview"]["highFragmentationClusters"],
+        anchorEmailNodeId: null as string | null,
+      };
       setPayload({
-        overview: data.overview ?? {
-          totalNodes: 0,
-          totalEdges: 0,
-          accountCount: 0,
-          subscriptionCount: 0,
-          emailCount: 0,
-          distinctProviders: 0,
-          highFragmentationClusters: [],
+        overview: {
+          ...ov,
+          anchorEmailNodeId: ov.anchorEmailNodeId ?? null,
         },
-        nodes: data.nodes ?? [],
+        nodes: (data.nodes ?? []).map((n) => ({
+          ...n,
+          mergeGroupSize: typeof n.mergeGroupSize === "number" ? n.mergeGroupSize : 1,
+        })),
         edges: data.edges ?? [],
       });
       if (quiet) setLoadError(null);

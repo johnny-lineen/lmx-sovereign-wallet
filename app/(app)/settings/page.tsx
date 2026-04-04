@@ -1,3 +1,4 @@
+import { AppPageHeader } from "@/components/app-page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { IdentitySettingsForm } from "@/components/settings/identity-settings-form";
 import * as identityService from "@/server/services/identity.service";
@@ -13,10 +14,7 @@ export default async function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-8">
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Settings</h2>
-        <p className="text-muted-foreground">Manage your root identity profile.</p>
-      </div>
+      <AppPageHeader title="Settings" description="Manage your root identity profile." />
       <Card>
         <CardHeader>
           <CardTitle>Root identity</CardTitle>

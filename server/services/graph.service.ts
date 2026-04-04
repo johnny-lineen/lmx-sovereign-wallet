@@ -7,6 +7,7 @@ import type {
 import { vaultItemMergeGroupKey } from "@/lib/entity-unify";
 import type { VaultItemDTO } from "@/server/services/vault.service";
 import { getVaultLibraryForClerkUser } from "@/server/services/vault.service";
+import * as userRepo from "@/server/repositories/user.repository";
 
 const SUMMARY_PREVIEW_MAX = 160;
 const METADATA_STRING_MAX = 80;
@@ -83,7 +84,7 @@ function metadataPreviewFromItem(item: VaultItemDTO): GraphMetadataPreview {
   return preview;
 }
 
-function itemToNode(item: VaultItemDTO): GraphNodePayload {
+function itemToNode(item: VaultItemDTO, mergeGroupSize = 1): GraphNodePayload {
   const metadataPreview = metadataPreviewFromItem(item);
   return {
     id: item.id,
@@ -91,7 +92,49 @@ function itemToNode(item: VaultItemDTO): GraphNodePayload {
     type: item.type,
     provider: item.provider,
     metadataPreview,
+    mergeGroupSize,
   };
+}
+
+function graphNodeMatchesNormalizedEmail(n: GraphNodePayload, normalized: string): boolean {
+  if (n.type !== "email") return false;
+  if (n.label.trim().toLowerCase() === normalized) return true;
+  const meta = n.metadataPreview.metadata;
+  if (meta && typeof meta.email === "string" && meta.email.trim().toLowerCase() === normalized) {
+    return true;
+  }
+  return false;
+}
+
+function resolveAnchorEmailNodeId(
+  nodes: GraphNodePayload[],
+  edges: GraphEdgePayload[],
+  userEmailNormalized: string | null,
+): string | null {
+  const emails = nodes.filter((n) => n.type === "email");
+  if (emails.length === 0) return null;
+
+  if (userEmailNormalized) {
+    const match = emails.find((n) => graphNodeMatchesNormalizedEmail(n, userEmailNormalized));
+    if (match) return match.id;
+  }
+
+  const degree = new Map<string, number>();
+  for (const e of edges) {
+    degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
+    degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
+  }
+
+  let bestId = emails[0]!.id;
+  let bestD = -1;
+  for (const n of emails) {
+    const d = degree.get(n.id) ?? 0;
+    if (d > bestD) {
+      bestD = d;
+      bestId = n.id;
+    }
+  }
+  return bestId;
 }
 
 function buildOverview(nodes: GraphNodePayload[], edges: GraphEdgePayload[]) {
@@ -173,7 +216,7 @@ function collapseDuplicateEntityNodes(
   const nodes: GraphNodePayload[] = [];
   for (const group of byKey.values()) {
     const canonical = group.slice().sort((a, b) => a.id.localeCompare(b.id))[0]!;
-    nodes.push(itemToNode(canonical));
+    nodes.push(itemToNode(canonical, group.length));
   }
 
   const edgeDedup = new Map<string, GraphEdgePayload>();
@@ -194,6 +237,9 @@ export async function getGraphPayloadForClerkUser(clerkUserId: string): Promise<
   const library = await getVaultLibraryForClerkUser(clerkUserId);
   if (!library) return null;
 
+  const user = await userRepo.findUserByClerkId(clerkUserId);
+  const userEmailNorm = user?.email?.trim().toLowerCase() ?? null;
+
   const itemIds = new Set(library.items.map((i) => i.id));
   const rawEdges: GraphEdgePayload[] = library.relationships
     .filter((r) => itemIds.has(r.fromItemId) && itemIds.has(r.toItemId))
@@ -205,8 +251,14 @@ export async function getGraphPayloadForClerkUser(clerkUserId: string): Promise<
     }));
 
   const collapsed = collapseDuplicateEntityNodes(library.items, rawEdges);
+  const anchorEmailNodeId = resolveAnchorEmailNodeId(
+    collapsed.nodes,
+    collapsed.edges,
+    userEmailNorm,
+  );
+  const overview = buildOverview(collapsed.nodes, collapsed.edges);
   return {
-    overview: buildOverview(collapsed.nodes, collapsed.edges),
+    overview: { ...overview, anchorEmailNodeId },
     nodes: collapsed.nodes,
     edges: collapsed.edges,
   };

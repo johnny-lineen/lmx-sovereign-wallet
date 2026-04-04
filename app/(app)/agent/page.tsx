@@ -1,15 +1,20 @@
+import { AppPageHeader } from "@/components/app-page-header";
 import { ActionCenter } from "@/components/actions/action-center";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 
 export default function AgentPage() {
   return (
-    <div className="space-y-4">
+    <div className="space-y-8">
+      <AppPageHeader
+        title="Agent"
+        description="Advisory-only control surface for transparent digital-identity hardening."
+      />
       <Card>
         <CardHeader>
-          <CardTitle>Agent</CardTitle>
+          <CardTitle>Action planner</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Advisory-only control surface for transparent digital-identity hardening.
+            Remediation steps are generated from deterministic insights and tracked below.
           </p>
         </CardHeader>
         <CardContent>

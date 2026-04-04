@@ -1,3 +1,4 @@
+import { AppPageHeader } from "@/components/app-page-header";
 import { InsightsList } from "@/components/insights/insights-list";
 import { generateInsightsForClerkUser, summarizeInsightRisk } from "@/server/services/insight.service";
 import { auth } from "@clerk/nextjs/server";
@@ -15,12 +16,10 @@ export default async function InsightsPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Insights</h2>
-        <p className="text-muted-foreground">
-          Deterministic rules over your vault — no external APIs. Refreshed each time you open this page.
-        </p>
-      </div>
+      <AppPageHeader
+        title="Insights"
+        description="Deterministic rules over your vault — no external APIs. Refreshed each time you open this page."
+      />
 
       {insights === null ? (
         <p className="text-sm text-destructive" role="alert">

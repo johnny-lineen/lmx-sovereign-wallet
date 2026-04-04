@@ -1,3 +1,4 @@
+import { AppPageHeader } from "@/components/app-page-header";
 import { ActionCenter } from "@/components/actions/action-center";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,12 +28,10 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>
-        <p className="text-muted-foreground">
-          Understand your footprint fast: ingest, view your graph, and prioritize actions.
-        </p>
-      </div>
+      <AppPageHeader
+        title="Dashboard"
+        description="Understand your footprint fast: ingest, view your graph, and prioritize actions."
+      />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {identity ? <IdentitySummaryCard identity={identity} /> : <IdentitySummaryEmpty />}

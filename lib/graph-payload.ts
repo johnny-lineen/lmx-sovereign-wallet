@@ -20,6 +20,8 @@ export type GraphNodePayload = {
   provider: string | null;
   /** Always includes `status`; adds summary/metadata samples when useful. */
   metadataPreview: GraphMetadataPreview;
+  /** Vault rows merged into this canonical node (1 = none merged). */
+  mergeGroupSize: number;
 };
 
 export type GraphEdgePayload = {
@@ -42,6 +44,8 @@ export type GraphPayload = {
       emailCount: number;
       accountLikeNodeCount: number;
     }[];
+    /** Primary email vault node id for graph centering; null if no emails. */
+    anchorEmailNodeId: string | null;
   };
   nodes: GraphNodePayload[];
   edges: GraphEdgePayload[];

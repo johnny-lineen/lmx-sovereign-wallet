@@ -1,5 +1,6 @@
 "use client";
 
+import { forceCollide, forceX, forceY } from "d3-force-3d";
 import {
   forwardRef,
   useCallback,
@@ -11,11 +12,13 @@ import {
 import ForceGraph2D, { type ForceGraphMethods, type GraphData } from "react-force-graph-2d";
 
 import type { GraphNodePayload } from "@/lib/graph-payload";
+import { layoutJitterUnit } from "@/lib/graph-layout";
 
 import {
   FORCE_GRAPH_BG,
   FORCE_GRAPH_LINK_DIM,
   FORCE_GRAPH_LINK_HI,
+  FORCE_GRAPH_LINK_HOVER,
   forceNodeFill,
   forceNodeRadius,
   truncateGraphLabel,
@@ -24,8 +27,14 @@ import {
 export type FGNode = GraphNodePayload & {
   id: string;
   val: number;
+  graphDegree: number;
+  layoutTx: number;
+  layoutTy: number;
+  isLayoutAnchor?: boolean;
   x?: number;
   y?: number;
+  fx?: number;
+  fy?: number;
 };
 
 export type FGLink = {
@@ -33,12 +42,12 @@ export type FGLink = {
   source: string;
   target: string;
   label: string;
-  /** Derived layout-only ties: shared hub, or soft anchor so all emails stay in one tight cloud. */
-  kind?: "vault" | "cohesion" | "cohesionGlobal";
+  /** Derived layout-only ties between emails that share a neighbor. */
+  kind?: "vault" | "cohesion";
 };
 
 function isDerivedCohesionLink(l: FGLink): boolean {
-  return l.kind === "cohesion" || l.kind === "cohesionGlobal";
+  return l.kind === "cohesion";
 }
 
 export type KnowledgeGraphHandle = {
@@ -54,8 +63,11 @@ type Props = {
   onHoverNode: (id: string | null) => void;
   onSelectId: (id: string | null) => void;
   highlightIds: Set<string>;
-  /** When true, nodes/links outside highlightIds are dimmed. */
+  /** When true, nodes/links outside highlightIds are dimmed (selection / hover). */
   dimUnrelated: boolean;
+  /** When true, dim nodes not in insightHighlightIds. */
+  insightDimActive: boolean;
+  insightHighlightIds: Set<string>;
   showAllLinkLabels: boolean;
 };
 
@@ -81,6 +93,8 @@ const VaultKnowledgeGraphCanvasInner = forwardRef<KnowledgeGraphHandle, Props>(f
     onSelectId,
     highlightIds,
     dimUnrelated,
+    insightDimActive,
+    insightHighlightIds,
     showAllLinkLabels,
   },
   ref,
@@ -118,29 +132,35 @@ const VaultKnowledgeGraphCanvasInner = forwardRef<KnowledgeGraphHandle, Props>(f
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
-    // d3-force typings expect numeric distance; per-link accessors are supported at runtime.
+
     const link = fg.d3Force("link") as {
       distance?: (arg: number | ((l: FGLink) => number)) => unknown;
       strength?: (arg: number | ((l: FGLink) => number)) => unknown;
     } | null;
     if (link?.distance && link?.strength) {
-      link.distance((l: FGLink) => {
-        if (l.kind === "cohesionGlobal") return 26;
-        if (l.kind === "cohesion") return 12;
-        return 44;
-      });
-      link.strength((l: FGLink) => {
-        if (l.kind === "cohesionGlobal") return 0.38;
-        if (l.kind === "cohesion") return 0.72;
-        return 0.54;
-      });
+      link.distance((l: FGLink) => (l.kind === "cohesion" ? 22 : 62));
+      link.strength((l: FGLink) => (l.kind === "cohesion" ? 0.45 : 0.38));
     }
+
     const charge = fg.d3Force("charge") as {
       strength?: (arg: number | ((n: FGNode) => number)) => unknown;
     } | null;
     if (charge?.strength) {
-      charge.strength((n: FGNode) => (n.type === "email" ? -8 : -74));
+      charge.strength((n: FGNode) => (n.type === "email" ? -28 : -92));
     }
+
+    const collide = forceCollide((n: FGNode) => forceNodeRadius(n.type, n.graphDegree) + 26);
+    collide.strength(0.92);
+    collide.iterations(3);
+    fg.d3Force("collide", collide);
+
+    const xForce = forceX((n: FGNode) => n.layoutTx ?? 0);
+    xForce.strength((n: FGNode) => (n.isLayoutAnchor ? 0 : 0.28));
+    fg.d3Force("x", xForce);
+
+    const yForce = forceY((n: FGNode) => n.layoutTy ?? 0);
+    yForce.strength((n: FGNode) => (n.isLayoutAnchor ? 0 : 0.28));
+    fg.d3Force("y", yForce);
   }, [graphData.nodes.length, dims.width, dims.height]);
 
   useImperativeHandle(
@@ -154,10 +174,30 @@ const VaultKnowledgeGraphCanvasInner = forwardRef<KnowledgeGraphHandle, Props>(f
         fg.zoom(2.4, 450);
       },
       zoomToFit: () => {
-        fgRef.current?.zoomToFit(400, 72, (n) => Boolean(n.id));
+        fgRef.current?.zoomToFit(400, 120, (n) => Boolean(n.id));
       },
     }),
     [],
+  );
+
+  const nodeDimPredicate = useCallback(
+    (nodeId: string) => {
+      const insightOn = insightDimActive && insightHighlightIds.size > 0;
+      if (insightOn) return !insightHighlightIds.has(nodeId);
+      if (dimUnrelated && highlightIds.size > 0) return !highlightIds.has(nodeId);
+      return false;
+    },
+    [insightDimActive, insightHighlightIds, dimUnrelated, highlightIds],
+  );
+
+  const linkHiPredicate = useCallback(
+    (a: string, b: string) => {
+      const insightOn = insightDimActive && insightHighlightIds.size > 0;
+      if (insightOn) return insightHighlightIds.has(a) && insightHighlightIds.has(b);
+      if (dimUnrelated && highlightIds.size > 0) return highlightIds.has(a) && highlightIds.has(b);
+      return false;
+    },
+    [insightDimActive, insightHighlightIds, dimUnrelated, highlightIds],
   );
 
   const shouldDrawLabel = useCallback(
@@ -172,8 +212,8 @@ const VaultKnowledgeGraphCanvasInner = forwardRef<KnowledgeGraphHandle, Props>(f
   const nodeCanvasObject = useCallback(
     (node: FGNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
       if (node.x === undefined || node.y === undefined) return;
-      const r = forceNodeRadius(node.type);
-      const dim = dimUnrelated && highlightIds.size > 0 && !highlightIds.has(node.id);
+      const r = forceNodeRadius(node.type, node.graphDegree);
+      const dim = nodeDimPredicate(node.id);
       const fill = forceNodeFill(node.type);
 
       ctx.save();
@@ -206,12 +246,12 @@ const VaultKnowledgeGraphCanvasInner = forwardRef<KnowledgeGraphHandle, Props>(f
 
       ctx.restore();
     },
-    [dimUnrelated, highlightIds, shouldDrawLabel, selectedId, hoveredNodeId],
+    [nodeDimPredicate, shouldDrawLabel, selectedId, hoveredNodeId],
   );
 
   const nodePointerAreaPaint = useCallback((node: FGNode, color: string, ctx: CanvasRenderingContext2D) => {
     if (node.x === undefined || node.y === undefined) return;
-    const r = forceNodeRadius(node.type) + 6;
+    const r = forceNodeRadius(node.type, node.graphDegree) + 6;
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
@@ -220,16 +260,21 @@ const VaultKnowledgeGraphCanvasInner = forwardRef<KnowledgeGraphHandle, Props>(f
 
   const linkColor = useCallback(
     (link: object) => {
-      const l = link as FGLink & { source: unknown; target: unknown };
-      const base = isDerivedCohesionLink(l) ? "rgba(95, 105, 130, 0.12)" : FORCE_GRAPH_LINK_DIM;
+      const l = link as FGLink & { source: unknown; target: unknown; id?: string };
+      const id = String(l.id ?? "");
+      if (hoveredLinkId && id === hoveredLinkId) {
+        return isDerivedCohesionLink(l) ? "rgba(170, 185, 215, 0.45)" : FORCE_GRAPH_LINK_HOVER;
+      }
+      const base = isDerivedCohesionLink(l) ? "rgba(95, 105, 130, 0.1)" : FORCE_GRAPH_LINK_DIM;
       const a = endpointId(l.source as string);
       const b = endpointId(l.target as string);
-      if (!dimUnrelated || highlightIds.size === 0) return base;
-      const hi = highlightIds.has(a) && highlightIds.has(b);
+      const anyDim = (insightDimActive && insightHighlightIds.size > 0) || (dimUnrelated && highlightIds.size > 0);
+      if (!anyDim) return base;
+      const hi = linkHiPredicate(a, b);
       if (hi) return isDerivedCohesionLink(l) ? "rgba(150, 165, 195, 0.28)" : FORCE_GRAPH_LINK_HI;
-      return "rgba(80, 88, 110, 0.09)";
+      return "rgba(70, 78, 100, 0.07)";
     },
-    [dimUnrelated, highlightIds],
+    [hoveredLinkId, insightDimActive, insightHighlightIds, dimUnrelated, highlightIds, linkHiPredicate],
   );
 
   const linkLabel = useCallback(
@@ -245,16 +290,20 @@ const VaultKnowledgeGraphCanvasInner = forwardRef<KnowledgeGraphHandle, Props>(f
 
   const linkWidth = useCallback(
     (link: object) => {
-      const l = link as FGLink & { source: unknown; target: unknown };
-      const w = isDerivedCohesionLink(l) ? 0.28 : 0.55;
-      const hiW = isDerivedCohesionLink(l) ? 0.55 : 1.25;
+      const l = link as FGLink & { source: unknown; target: unknown; id?: string };
+      const id = String(l.id ?? "");
+      const w = isDerivedCohesionLink(l) ? 0.22 : 0.32;
+      const hiW = isDerivedCohesionLink(l) ? 0.48 : 1.35;
+      const hoverW = isDerivedCohesionLink(l) ? 0.65 : 1.65;
+      if (hoveredLinkId && id === hoveredLinkId) return hoverW;
       const a = endpointId(l.source as string);
       const b = endpointId(l.target as string);
-      if (!dimUnrelated || highlightIds.size === 0) return w;
-      const hi = highlightIds.has(a) && highlightIds.has(b);
-      return hi ? hiW : 0.35;
+      const anyDim = (insightDimActive && insightHighlightIds.size > 0) || (dimUnrelated && highlightIds.size > 0);
+      if (!anyDim) return w;
+      const hi = linkHiPredicate(a, b);
+      return hi ? hiW : 0.28;
     },
-    [dimUnrelated, highlightIds],
+    [hoveredLinkId, insightDimActive, insightHighlightIds, dimUnrelated, highlightIds, linkHiPredicate],
   );
 
   if (graphData.nodes.length === 0) {
@@ -284,14 +333,14 @@ const VaultKnowledgeGraphCanvasInner = forwardRef<KnowledgeGraphHandle, Props>(f
           setHoveredLinkId(l?.id != null ? String(l.id) : null);
         }}
         linkLineDash={(link) => (isDerivedCohesionLink(link as FGLink) ? [3, 5] : null)}
-        d3VelocityDecay={0.28}
-        d3AlphaDecay={0.022}
-        warmupTicks={64}
-        cooldownTicks={420}
+        d3VelocityDecay={0.38}
+        d3AlphaDecay={0.028}
+        warmupTicks={96}
+        cooldownTicks={640}
         onEngineStop={() => {
           if (!hasFittedRef.current) {
             hasFittedRef.current = true;
-            fgRef.current?.zoomToFit(600, 88, (n) => Boolean(n.id));
+            fgRef.current?.zoomToFit(600, 120, (n) => Boolean(n.id));
           }
         }}
         onNodeClick={(node) => {

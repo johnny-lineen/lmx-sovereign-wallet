@@ -1,5 +1,8 @@
 import { loadEnvConfig } from "@next/env";
+import { PrismaNeon } from "@prisma/adapter-neon";
+import { neonConfig } from "@neondatabase/serverless";
 import { PrismaClient } from "@prisma/client";
+import ws from "ws";
 
 // Ensure the same env files Next uses (.env.local, .env.development.local, etc.)
 // are loaded before Prisma reads DATABASE_URL (Turbopack can evaluate this module early).
@@ -10,33 +13,16 @@ if (!process.env.DATABASE_URL && process.env.database_url) {
   process.env.DATABASE_URL = process.env.database_url;
 }
 
-const databaseUrl = process.env.DATABASE_URL;
-const databaseUrlProtocol = databaseUrl?.split("://")[0] ?? "missing";
+const databaseUrlRaw = process.env.DATABASE_URL;
 
-// #region agent log
-fetch("http://127.0.0.1:7499/ingest/f0394224-84a1-4c5e-8e0f-f979a5e0980c", {
-  method: "POST",
-  headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "059c1b" },
-  body: JSON.stringify({
-    sessionId: "059c1b",
-    runId: "signin-prisma-debug-1",
-    hypothesisId: "H2",
-    location: "lib/prisma.ts:database_url_probe",
-    message: "observed prisma bootstrap database url protocol",
-    data: {
-      databaseUrlProtocol,
-      hasDatabaseUrl: Boolean(databaseUrl),
-    },
-    timestamp: Date.now(),
-  }),
-}).catch(() => {});
-// #endregion
-
-if (!databaseUrl) {
+if (!databaseUrlRaw) {
   throw new Error(
     "DATABASE_URL is not set. Add it to `.env.local` (name must be DATABASE_URL in capitals, not database_url) and restart `npm run dev`. Prisma CLI reads `.env` by default.",
   );
 }
+
+/** Resolved after guard so nested functions see `string`, not `string | undefined`. */
+const databaseUrl: string = databaseUrlRaw;
 
 if (process.env.NODE_ENV === "development") {
   try {
@@ -71,33 +57,33 @@ if (process.env.NODE_ENV === "development") {
   }
 }
 
+function isNeonPostgresUrl(url: string): boolean {
+  try {
+    const normalized = url.replace(/^postgresql(\+[^:]*):\/\//i, "http://");
+    return new URL(normalized).hostname.toLowerCase().endsWith(".neon.tech");
+  } catch {
+    return false;
+  }
+}
+
+function createPrismaClient(): PrismaClient {
+  const log =
+    process.env.NODE_ENV === "development" ? (["error", "warn"] as const) : (["error"] as const);
+
+  if (isNeonPostgresUrl(databaseUrl)) {
+    // Neon: TCP pool + scale-to-zero yields frequent "connection Closed" noise and P2028-adjacent failures.
+    // Serverless driver over WebSockets is the supported Prisma + Neon setup (see neon.com/docs/guides/prisma).
+    neonConfig.webSocketConstructor = ws;
+    const adapter = new PrismaNeon({ connectionString: databaseUrl });
+    return new PrismaClient({ adapter, log: [...log] });
+  }
+
+  return new PrismaClient({ log: [...log] });
+}
+
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined };
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
-  });
-
-// #region agent log
-fetch("http://127.0.0.1:7499/ingest/f0394224-84a1-4c5e-8e0f-f979a5e0980c", {
-  method: "POST",
-  headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "059c1b" },
-  body: JSON.stringify({
-    sessionId: "059c1b",
-    runId: "signin-prisma-debug-1",
-    hypothesisId: "H1",
-    location: "lib/prisma.ts:client_init_probe",
-    message: "initialized prisma client runtime mode",
-    data: {
-      nodeEnv: process.env.NODE_ENV ?? "unknown",
-      hasGlobalClient: Boolean(globalForPrisma.prisma),
-      prismaClientEngineType: process.env.PRISMA_CLIENT_ENGINE_TYPE ?? null,
-    },
-    timestamp: Date.now(),
-  }),
-}).catch(() => {});
-// #endregion
+export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;

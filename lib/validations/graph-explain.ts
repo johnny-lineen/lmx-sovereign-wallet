@@ -18,6 +18,7 @@ export const graphExplainRequestSchema = z.object({
         })
         .optional(),
     }),
+    mergeGroupSize: z.number().int().min(1).max(9999).optional(),
   }),
   connections: z
     .array(

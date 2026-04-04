@@ -1,4 +1,4 @@
-import type { Prisma, VaultItemType } from "@prisma/client";
+import type { Prisma, VaultItemType, VaultRelationType } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 
@@ -90,5 +90,41 @@ export async function listVaultRelationshipsForUser(userId: string) {
       toItem: { select: { id: true, title: true, type: true } },
     },
     orderBy: { createdAt: "asc" },
+  });
+}
+
+export async function findVaultItemsByCanonicalDomainForUser(
+  userId: string,
+  canonicalDomain: string,
+  types: VaultItemType[],
+  tx?: Prisma.TransactionClient,
+): Promise<{ id: string; type: VaultItemType }[]> {
+  const db = tx ?? prisma;
+  const lowered = canonicalDomain.trim().toLowerCase();
+  if (!lowered) return [];
+  return db.vaultItem.findMany({
+    where: {
+      userId,
+      type: { in: types },
+      metadata: {
+        path: ["canonicalProviderDomain"],
+        equals: lowered,
+      },
+    },
+    select: { id: true, type: true },
+  });
+}
+
+export async function findVaultRelationshipForUser(
+  userId: string,
+  fromItemId: string,
+  toItemId: string,
+  relationType: VaultRelationType,
+  tx?: Prisma.TransactionClient,
+): Promise<{ id: string } | null> {
+  const db = tx ?? prisma;
+  return db.vaultRelationship.findFirst({
+    where: { userId, fromItemId, toItemId, relationType },
+    select: { id: true },
   });
 }

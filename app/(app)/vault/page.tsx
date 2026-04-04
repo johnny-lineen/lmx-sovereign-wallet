@@ -1,3 +1,4 @@
+import { AppPageHeader } from "@/components/app-page-header";
 import { ProfileIngestionSection } from "@/components/vault/profile-ingestion-section";
 import { VaultOverview } from "@/components/vault/vault-overview";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -23,10 +24,10 @@ export default async function VaultPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Vault</h2>
-        <p className="text-muted-foreground">Identity-linked items and relationships for your account.</p>
-      </div>
+      <AppPageHeader
+        title="Vault"
+        description="Identity-linked items and relationships for your account."
+      />
       <Suspense
         fallback={
           <Card>

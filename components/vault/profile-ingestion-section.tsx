@@ -32,7 +32,7 @@ type ImportJobRow = {
   candidateCount: number;
 };
 
-type ImportCandidateRow = {
+type UnifiedImportCandidateMember = {
   id: string;
   importJobId: string;
   status: string;
@@ -45,6 +45,16 @@ type ImportCandidateRow = {
   dedupeKey: string;
   createdVaultItemId: string | null;
   createdAt: string;
+  sourceEmail: string | null;
+};
+
+type UnifiedImportCandidateGroup = {
+  unificationKey: string;
+  suggestedType: string;
+  title: string;
+  provider: string | null;
+  sourceEmails: string[];
+  members: UnifiedImportCandidateMember[];
 };
 
 type CandidateGroup = "accounts" | "subscriptions" | "security_activity";
@@ -84,6 +94,19 @@ function evidenceSubject(evidence: unknown): string | null {
   return typeof s === "string" ? s : null;
 }
 
+function evidenceConfidenceLabel(evidence: unknown): string | null {
+  if (!evidence || typeof evidence !== "object") return null;
+  const c = (evidence as Record<string, unknown>).confidence;
+  if (typeof c !== "number" || !Number.isFinite(c)) return null;
+  return `${Math.round(Math.max(0, Math.min(1, c)) * 100)}% conf.`;
+}
+
+function groupForUnifiedGroup(group: UnifiedImportCandidateGroup): CandidateGroup {
+  const m = group.members.find((x) => x.status === "pending") ?? group.members[0];
+  if (!m) return "accounts";
+  return groupForCandidate(m.signal, m.suggestedType);
+}
+
 export function ProfileIngestionSection() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -102,8 +125,9 @@ export function ProfileIngestionSection() {
   const [connectorId, setConnectorId] = useState<string>("");
 
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const [candidates, setCandidates] = useState<ImportCandidateRow[] | null>(null);
+  const [unifiedGroups, setUnifiedGroups] = useState<UnifiedImportCandidateGroup[] | null>(null);
   const [candidatesError, setCandidatesError] = useState<string | null>(null);
+  const [scanDebugOpen, setScanDebugOpen] = useState(false);
 
   const [scanLoading, setScanLoading] = useState(false);
   const [connectLoading, setConnectLoading] = useState(false);
@@ -219,20 +243,20 @@ export function ProfileIngestionSection() {
 
   const loadCandidates = useCallback(async (jobId: string) => {
     setCandidatesError(null);
-    setCandidates(null);
+    setUnifiedGroups(null);
     try {
-      const qs = new URLSearchParams({ jobId, status: "pending" });
+      const qs = new URLSearchParams({ jobId, status: "pending", unified: "1" });
       const res = await fetch(`/api/import/candidates?${qs}`, { credentials: "same-origin" });
       if (!res.ok) {
         setCandidatesError("Could not load import candidates.");
-        setCandidates([]);
+        setUnifiedGroups([]);
         return;
       }
-      const data = (await res.json()) as { candidates?: ImportCandidateRow[] };
-      setCandidates(data.candidates ?? []);
+      const data = (await res.json()) as { unified?: UnifiedImportCandidateGroup[] };
+      setUnifiedGroups(data.unified ?? []);
     } catch {
       setCandidatesError("Could not load import candidates.");
-      setCandidates([]);
+      setUnifiedGroups([]);
     }
   }, []);
 
@@ -255,7 +279,7 @@ export function ProfileIngestionSection() {
 
   useEffect(() => {
     if (!activeJobId) {
-      setCandidates(null);
+      setUnifiedGroups(null);
       return;
     }
     void loadCandidates(activeJobId);
@@ -263,24 +287,26 @@ export function ProfileIngestionSection() {
 
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [activeJobId, candidates]);
+  }, [activeJobId, unifiedGroups]);
 
-  const groupedCandidates = useMemo(() => {
-    if (!candidates?.length) return null as Map<CandidateGroup, ImportCandidateRow[]> | null;
-    const map = new Map<CandidateGroup, ImportCandidateRow[]>();
+  const groupedUnified = useMemo(() => {
+    if (!unifiedGroups?.length) return null as Map<CandidateGroup, UnifiedImportCandidateGroup[]> | null;
+    const map = new Map<CandidateGroup, UnifiedImportCandidateGroup[]>();
     for (const g of GROUP_ORDER) map.set(g, []);
-    for (const c of candidates) {
-      const g = groupForCandidate(c.signal, c.suggestedType);
-      map.get(g)!.push(c);
+    for (const ug of unifiedGroups) {
+      const g = groupForUnifiedGroup(ug);
+      map.get(g)!.push(ug);
     }
     return map;
-  }, [candidates]);
+  }, [unifiedGroups]);
 
   const pendingSelectedIds = useMemo(() => {
-    if (!candidates) return [];
-    const pending = new Set(candidates.filter((c) => c.status === "pending").map((c) => c.id));
+    if (!unifiedGroups) return [];
+    const pending = new Set(
+      unifiedGroups.flatMap((ug) => ug.members.filter((m) => m.status === "pending").map((m) => m.id)),
+    );
     return [...selectedIds].filter((id) => pending.has(id));
-  }, [candidates, selectedIds]);
+  }, [unifiedGroups, selectedIds]);
   const hasRunningJob = useMemo(() => (jobs ?? []).some((j) => j.status === "running" || j.status === "queued"), [jobs]);
 
   const toggleId = (id: string, pending: boolean) => {
@@ -293,8 +319,8 @@ export function ProfileIngestionSection() {
     });
   };
 
-  const selectAllPendingInGroup = (rows: ImportCandidateRow[]) => {
-    const pending = rows.filter((c) => c.status === "pending").map((c) => c.id);
+  const selectAllPendingInGroup = (groups: UnifiedImportCandidateGroup[]) => {
+    const pending = groups.flatMap((ug) => ug.members.filter((m) => m.status === "pending").map((m) => m.id));
     setSelectedIds((prev) => {
       const next = new Set(prev);
       for (const id of pending) next.add(id);
@@ -731,6 +757,26 @@ export function ProfileIngestionSection() {
               </table>
             </div>
           )}
+          {activeJobId && jobs?.some((j) => j.id === activeJobId) ? (
+            <div className="space-y-2">
+              <button
+                type="button"
+                className="text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                onClick={() => setScanDebugOpen((v) => !v)}
+              >
+                {scanDebugOpen ? "Hide scan debug" : "Show scan debug"}
+              </button>
+              {scanDebugOpen ? (
+                <pre className="max-h-64 overflow-auto rounded-lg border border-border/60 bg-muted/20 p-3 font-mono text-[10px] leading-relaxed text-muted-foreground">
+                  {JSON.stringify(
+                    jobs.find((j) => j.id === activeJobId)?.metadata ?? {},
+                    null,
+                    2,
+                  )}
+                </pre>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="space-y-3">
@@ -738,7 +784,8 @@ export function ProfileIngestionSection() {
             <div>
               <h4 className="text-sm font-medium">Step 3 — Import candidates</h4>
               <p className="text-xs text-muted-foreground">
-                Select pending rows, then approve (links to your profile email) or reject.
+                Grouped by provider domain where possible. Select pending rows, then approve (links to your profile
+                email) or reject.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -766,73 +813,109 @@ export function ProfileIngestionSection() {
             <p className="text-sm text-destructive">{candidatesError}</p>
           ) : !activeJobId ? (
             <p className="text-sm text-muted-foreground">Select a job to view candidates.</p>
-          ) : candidates === null ? (
+          ) : unifiedGroups === null ? (
             <p className="text-sm text-muted-foreground">Loading candidates…</p>
-          ) : candidates.length === 0 ? (
+          ) : unifiedGroups.length === 0 ? (
             <p className="text-sm text-muted-foreground">No candidates for this job.</p>
           ) : (
             <div className="space-y-6">
               {GROUP_ORDER.map((group) => {
-                const rows = groupedCandidates?.get(group) ?? [];
-                if (rows.length === 0) return null;
+                const groups = groupedUnified?.get(group) ?? [];
+                if (groups.length === 0) return null;
+                const memberCount = groups.reduce((n, ug) => n + ug.members.length, 0);
                 return (
                   <div key={group} className="space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <h5 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         {GROUP_LABEL[group]}
-                        <span className="ml-2 font-normal">({rows.length})</span>
+                        <span className="ml-2 font-normal">
+                          ({groups.length} group{groups.length === 1 ? "" : "s"}, {memberCount} row
+                          {memberCount === 1 ? "" : "s"})
+                        </span>
                       </h5>
                       <Button
                         type="button"
                         variant="ghost"
                         size="xs"
                         className="text-muted-foreground"
-                        onClick={() => selectAllPendingInGroup(rows)}
+                        onClick={() => selectAllPendingInGroup(groups)}
                       >
                         Select all pending
                       </Button>
                     </div>
-                    <ul className="space-y-2">
-                      {rows.map((c) => {
-                        const pending = c.status === "pending";
-                        const subj = evidenceSubject(c.evidence);
-                        const checked = selectedIds.has(c.id);
-                        return (
-                          <li
-                            key={c.id}
-                            className={cn(
-                              "flex gap-3 rounded-lg border border-border/60 bg-muted/10 p-3",
-                              !pending && "opacity-70",
-                            )}
-                          >
-                            <input
-                              type="checkbox"
-                              className="mt-1 size-4 shrink-0 rounded border-input"
-                              checked={checked}
-                              disabled={!pending || reviewLoading}
-                              onChange={() => toggleId(c.id, pending)}
-                              aria-label={`Select ${c.title}`}
-                            />
-                            <div className="min-w-0 flex-1 space-y-1">
-                              <div className="flex flex-wrap items-baseline gap-2">
-                                <span className="font-medium leading-snug">{c.title}</span>
-                                <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
-                                  {c.status}
-                                </span>
-                              </div>
-                              <p className="text-xs text-muted-foreground">
-                                {c.signal.replaceAll("_", " ")} · {c.suggestedType.replaceAll("_", " ")}
-                                {c.providerDomain ? ` · ${c.providerDomain}` : ""}
-                              </p>
-                              {subj ? (
-                                <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
-                                  {subj}
-                                </p>
-                              ) : null}
-                            </div>
-                          </li>
-                        );
-                      })}
+                    <ul className="space-y-3">
+                      {groups.map((ug) => (
+                        <li
+                          key={ug.unificationKey}
+                          className="space-y-2 rounded-lg border border-border/60 bg-muted/10 p-3"
+                        >
+                          <div className="flex flex-wrap items-baseline gap-2 border-b border-border/40 pb-2">
+                            <span className="font-medium leading-snug">{ug.title}</span>
+                            {ug.provider ? (
+                              <span className="text-xs text-muted-foreground">{ug.provider}</span>
+                            ) : null}
+                            {ug.sourceEmails.length > 0 ? (
+                              <span className="text-[10px] text-muted-foreground">
+                                · {ug.sourceEmails.join(", ")}
+                              </span>
+                            ) : null}
+                          </div>
+                          <ul className="space-y-2">
+                            {ug.members.map((c) => {
+                              const pending = c.status === "pending";
+                              const subj = evidenceSubject(c.evidence);
+                              const summary =
+                                typeof c.evidence === "object" &&
+                                c.evidence !== null &&
+                                typeof (c.evidence as Record<string, unknown>).summary === "string"
+                                  ? ((c.evidence as Record<string, unknown>).summary as string)
+                                  : null;
+                              const conf = evidenceConfidenceLabel(c.evidence);
+                              const checked = selectedIds.has(c.id);
+                              return (
+                                <li
+                                  key={c.id}
+                                  className={cn(
+                                    "flex gap-3 rounded-md border border-transparent bg-background/40 p-2",
+                                    !pending && "opacity-70",
+                                  )}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="mt-1 size-4 shrink-0 rounded border-input"
+                                    checked={checked}
+                                    disabled={!pending || reviewLoading}
+                                    onChange={() => toggleId(c.id, pending)}
+                                    aria-label={`Select ${c.title}`}
+                                  />
+                                  <div className="min-w-0 flex-1 space-y-1">
+                                    <div className="flex flex-wrap items-baseline gap-2">
+                                      <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
+                                        {c.status}
+                                      </span>
+                                      <span className="text-xs text-muted-foreground">
+                                        {c.signal.replaceAll("_", " ")} ·{" "}
+                                        {c.suggestedType.replaceAll("_", " ")}
+                                        {c.providerDomain ? ` · ${c.providerDomain}` : ""}
+                                        {conf ? ` · ${conf}` : ""}
+                                      </span>
+                                    </div>
+                                    {summary ? (
+                                      <p className="text-xs leading-relaxed text-muted-foreground line-clamp-3">
+                                        {summary}
+                                      </p>
+                                    ) : subj ? (
+                                      <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
+                                        {subj}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </li>
+                      ))}
                     </ul>
                   </div>
                 );

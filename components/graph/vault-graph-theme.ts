@@ -55,8 +55,8 @@ export const vaultTypeVisuals: Record<
   },
   payment_method_reference: {
     Icon: CreditCard,
-    shell: "border-l-[3px] border-l-cyan-600 bg-cyan-500/[0.08]",
-    iconClass: "text-cyan-700 dark:text-cyan-400",
+    shell: "border-l-[3px] border-l-amber-500 bg-amber-500/[0.08]",
+    iconClass: "text-amber-700 dark:text-amber-400",
   },
   credential_reference: {
     Icon: KeyRound,

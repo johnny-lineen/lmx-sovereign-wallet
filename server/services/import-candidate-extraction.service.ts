@@ -1,5 +1,7 @@
 import type { ImportCandidateSignal, VaultItemType } from "@prisma/client";
 
+import { DOMAIN_CANONICAL, PROVIDER_LABELS } from "@/lib/provider-registry";
+
 /** Parsed Gmail metadata used by deterministic rules. */
 export type GmailMessageMeta = {
   messageId: string;
@@ -25,75 +27,6 @@ const PERSONAL_FROM_DOMAINS = new Set([
   "protonmail.com",
   "aol.com",
 ]);
-
-/** Map registrable sending domains to a canonical provider bucket (aggregation key). */
-const DOMAIN_CANONICAL: Record<string, string> = {
-  "amazon.co.uk": "amazon.com",
-  "amazon.de": "amazon.com",
-  "amazon.fr": "amazon.com",
-  "amazon.ca": "amazon.com",
-  "amazon.com.au": "amazon.com",
-  "primevideo.com": "amazon.com",
-  "audible.com": "amazon.com",
-  "uber.com": "uber.com",
-  "uberinternal.com": "uber.com",
-  "lyftmail.com": "lyft.com",
-  "lyft.com": "lyft.com",
-  "openai.com": "openai.com",
-  "email.openai.com": "openai.com",
-};
-
-const PROVIDER_LABELS: Record<string, string> = {
-  "netflix.com": "Netflix",
-  "spotify.com": "Spotify",
-  "apple.com": "Apple",
-  "amazon.com": "Amazon",
-  "amazon.co.uk": "Amazon",
-  "github.com": "GitHub",
-  "google.com": "Google",
-  "microsoft.com": "Microsoft",
-  "adobe.com": "Adobe",
-  "dropbox.com": "Dropbox",
-  "notion.so": "Notion",
-  "notion.com": "Notion",
-  "figma.com": "Figma",
-  "stripe.com": "Stripe",
-  "paypal.com": "PayPal",
-  "chase.com": "Chase",
-  "bankofamerica.com": "Bank of America",
-  "coinbase.com": "Coinbase",
-  "discord.com": "Discord",
-  "slack.com": "Slack",
-  "zoom.us": "Zoom",
-  "linkedin.com": "LinkedIn",
-  "twitter.com": "X (Twitter)",
-  "x.com": "X",
-  "facebook.com": "Meta",
-  "meta.com": "Meta",
-  "instagram.com": "Instagram",
-  "openai.com": "OpenAI (ChatGPT)",
-  "uber.com": "Uber",
-  "lyft.com": "Lyft",
-  "airbnb.com": "Airbnb",
-  "booking.com": "Booking.com",
-  "expedia.com": "Expedia",
-  "delta.com": "Delta",
-  "united.com": "United Airlines",
-  "southwest.com": "Southwest",
-  "hulu.com": "Hulu",
-  "disneyplus.com": "Disney+",
-  "max.com": "Max",
-  "paramountplus.com": "Paramount+",
-  "docusign.com": "DocuSign",
-  "mailchimp.com": "Mailchimp",
-  "twilio.com": "Twilio",
-  "vercel.com": "Vercel",
-  "cloudflare.com": "Cloudflare",
-  "digitalocean.com": "DigitalOcean",
-  "heroku.com": "Heroku",
-  "atlassian.com": "Atlassian",
-  "jetbrains.com": "JetBrains",
-};
 
 const PUBLIC_ICANN_DOUBLE = new Set([
   "co.uk",
@@ -249,9 +182,9 @@ const SIGNAL_PRIORITY: ImportCandidateSignal[] = [
 ];
 
 /** Minimum aggregated account score to emit an account candidate. */
-const ACCOUNT_AGG_THRESHOLD = 14;
+export const ACCOUNT_AGG_THRESHOLD = 14;
 /** Minimum aggregated subscription score to emit a subscription candidate. */
-const SUBSCRIPTION_AGG_THRESHOLD = 13;
+export const SUBSCRIPTION_AGG_THRESHOLD = 13;
 /** Single-message “strong” bypass for account (after dampening). */
 const ACCOUNT_SINGLE_STRONG = 15;
 /** Single-message bypass for subscription. */
@@ -288,7 +221,7 @@ function normalizeProviderDomain(fromDomain: string | null): string | null {
 
 function providerLabelForDomain(normalizedDomain: string | null): string | null {
   if (!normalizedDomain) return null;
-  return PROVIDER_LABELS[normalizedDomain] ?? null;
+  return PROVIDER_LABELS[normalizedDomain as keyof typeof PROVIDER_LABELS] ?? null;
 }
 
 function titleForCandidate(normalizedDomain: string | null, provider: string | null, fallback: string): string {

@@ -33,20 +33,18 @@ export function AppShell({
   title?: string;
 }) {
   const pathname = usePathname();
-  const title = titleProp ?? titles[pathname] ?? "LMX Wallet";
+  const title = titleProp ?? titles[pathname] ?? "Console";
   const isGraphWorkspace = pathname === "/graph" || pathname.startsWith("/graph/");
 
   return (
-    <div
-      className={cn(
-        "flex flex-col md:flex-row",
-        isGraphWorkspace ? "min-h-dvh" : "min-h-full",
-      )}
-    >
-      <aside className="hidden w-56 shrink-0 border-b border-border bg-sidebar md:flex md:flex-col md:border-b-0 md:border-r">
+    <div className="flex min-h-dvh flex-col bg-background md:flex-row">
+      <aside className="hidden w-56 shrink-0 border-b border-border/80 bg-sidebar md:flex md:flex-col md:border-b-0 md:border-r md:border-border/80">
         <div className="flex h-14 items-center border-b border-sidebar-border px-4">
-          <Link href="/dashboard" className="font-semibold tracking-tight text-sidebar-foreground">
-            LMX Wallet
+          <Link
+            href="/dashboard"
+            className="font-heading text-sm font-semibold tracking-tight text-sidebar-foreground sm:text-base"
+          >
+            LMX Sovereign Wallet
           </Link>
         </div>
         <nav className="flex flex-1 flex-col gap-1 p-3">
@@ -77,11 +75,11 @@ export function AppShell({
           isGraphWorkspace && "md:min-h-dvh",
         )}
       >
-        <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:px-6">
+        <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border/80 bg-background/85 px-4 text-foreground backdrop-blur-md supports-[backdrop-filter]:bg-background/70 md:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <Link
               href="/dashboard"
-              className="shrink-0 font-semibold tracking-tight md:hidden"
+              className="shrink-0 font-heading text-sm font-semibold tracking-tight md:hidden"
             >
               LMX
             </Link>
@@ -102,7 +100,7 @@ export function AppShell({
                 );
               })}
             </div>
-            <h1 className="hidden truncate text-lg font-semibold md:block">{title}</h1>
+            <h1 className="hidden truncate font-heading text-lg font-semibold md:block">{title}</h1>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <UserButton />
