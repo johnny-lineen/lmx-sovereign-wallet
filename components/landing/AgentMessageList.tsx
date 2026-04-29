@@ -9,9 +9,10 @@ export type AgentChatMessage = { id: string; role: "user" | "assistant"; content
 type AgentMessageListProps = {
   messages: AgentChatMessage[];
   loading: boolean;
+  loadingText?: string;
 };
 
-export function AgentMessageList({ messages, loading }: AgentMessageListProps) {
+export function AgentMessageList({ messages, loading, loadingText = "Thinking…" }: AgentMessageListProps) {
   const empty = messages.length === 0;
 
   return (
@@ -56,7 +57,7 @@ export function AgentMessageList({ messages, loading }: AgentMessageListProps) {
       {loading ? (
         <div className="flex items-center gap-2.5 pl-1 text-muted-foreground">
           <Loader2 className="size-4 shrink-0 animate-spin opacity-80" aria-hidden />
-          <span className="text-sm">Thinking…</span>
+          <span className="text-sm">{loadingText}</span>
         </div>
       ) : null}
     </div>

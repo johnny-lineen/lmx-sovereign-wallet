@@ -1,85 +1,105 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Orbit } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Orbit, Search } from "lucide-react";
 
-import { AgentInput } from "@/components/landing/AgentInput";
-import { AgentMessageList, type AgentChatMessage } from "@/components/landing/AgentMessageList";
-import { AgentPromptChips } from "@/components/landing/AgentPromptChips";
-import { buttonVariants } from "@/components/ui/button-variants";
-import { INITIAL_SUGGESTED_PROMPTS } from "@/lib/landing-agent/suggestions";
-import type { LandingAgentCta, LandingAgentIntent, LandingAgentQueryResponse } from "@/lib/landing-agent/types";
-import { cn } from "@/lib/utils";
-
-function formatIntentLabel(intent: string) {
-  return intent
-    .split("_")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
-}
+const PLATFORM_CHIPS = ["GitHub", "X", "Reddit", "LinkedIn", "YouTube"] as const;
+const DEMO_RESULTS = [
+  { platform: "GitHub", title: "John Doe", handle: "@johndoe", detail: "24 repos", meta: "187 followers" },
+  { platform: "X", title: "John Doe", handle: "@johndoe", detail: "thoughts on tech and coffee", meta: "3.2K followers" },
+  { platform: "Reddit", title: "u/johndoe", handle: "u/johndoe", detail: "12.4K karma", meta: "4y account age" },
+] as const;
+const DEMO_STEPS = ["running connectors", "matching identities", "building preview report"] as const;
 
 export function LandingAgent() {
-  const [messages, setMessages] = useState<AgentChatMessage[]>([]);
-  const [draft, setDraft] = useState("");
+  const [isActivated, setIsActivated] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastIntent, setLastIntent] = useState<LandingAgentIntent | null>(null);
-  const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>(() => [...INITIAL_SUGGESTED_PROMPTS]);
-  const [lastCta, setLastCta] = useState<LandingAgentCta | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const [stepIndex, setStepIndex] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [demoStarted, setDemoStarted] = useState(false);
+  const [visibleDemoResults, setVisibleDemoResults] = useState(0);
+
+  const playQuickDemo = useCallback(async () => {
+    if (loading) return;
+    setIsActivated(true);
+    setDemoStarted(true);
+    setVisibleDemoResults(0);
+    setStepIndex(0);
+    setProgress(12);
+    setLoading(true);
+
+    try {
+      const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+      await wait(450);
+      setProgress(38);
+      setStepIndex(1);
+      await wait(620);
+      setProgress(71);
+      setStepIndex(2);
+      await wait(740);
+      setProgress(100);
+      setLoading(false);
+
+      for (let i = 1; i <= DEMO_RESULTS.length; i += 1) {
+        await wait(220);
+        setVisibleDemoResults(i);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [loading]);
 
   useEffect(() => {
-    if (!loading && messages.length === 0) return;
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+    const triggerFromHash = () => {
+      if (window.location.hash !== "#landing-agent-play") return;
+      setIsActivated(true);
+      window.requestAnimationFrame(() => {
+        document.getElementById("landing-agent")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      void playQuickDemo();
+      window.requestAnimationFrame(() => {
+        window.history.replaceState(null, "", "#landing-agent");
+      });
+    };
 
-  const send = useCallback(
-    async (text: string) => {
-      const trimmed = text.trim();
-      if (!trimmed || loading) return;
-      setError(null);
-      setLastCta(null);
-      setLoading(true);
-      const userId = crypto.randomUUID();
-      setMessages((prev) => [...prev, { id: userId, role: "user", content: trimmed }]);
-      setDraft("");
-      try {
-        const res = await fetch("/api/landing-agent/query", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: trimmed }),
-        });
-        const data = (await res.json()) as Partial<LandingAgentQueryResponse> & { ok?: boolean; error?: string };
-        if (!res.ok || data.error || typeof data.answer !== "string" || !data.intent) {
-          setError(typeof data.error === "string" ? data.error : "Could not get an answer. Try again.");
-          return;
-        }
-        const body = data as LandingAgentQueryResponse;
-        setLastIntent(body.intent);
-        setSuggestedPrompts(body.suggestedPrompts?.length ? body.suggestedPrompts : [...INITIAL_SUGGESTED_PROMPTS]);
-        setLastCta(body.cta ?? { type: "none" });
-        setMessages((prev) => [
-          ...prev,
-          { id: crypto.randomUUID(), role: "assistant", content: body.answer },
-        ]);
-      } catch {
-        setError("Network error. Check your connection and try again.");
-      } finally {
-        setLoading(false);
-      }
-    },
-    [loading],
-  );
+    triggerFromHash();
+    window.addEventListener("hashchange", triggerFromHash);
+    return () => window.removeEventListener("hashchange", triggerFromHash);
+  }, [playQuickDemo]);
+
+  useEffect(() => {
+    const onTriggerClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      const anchor = target?.closest('a[href="#landing-agent-play"]');
+      if (!anchor) return;
+
+      event.preventDefault();
+      setIsActivated(true);
+      window.requestAnimationFrame(() => {
+        document.getElementById("landing-agent")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      void playQuickDemo();
+      window.requestAnimationFrame(() => {
+        window.history.replaceState(null, "", "#landing-agent");
+      });
+    };
+
+    document.addEventListener("click", onTriggerClick);
+    return () => document.removeEventListener("click", onTriggerClick);
+  }, [playQuickDemo]);
+
+  const runningText = loading ? DEMO_STEPS[stepIndex] : demoStarted ? "complete" : "waiting";
 
   return (
     <section
       id="landing-agent"
       data-slot="landing-agent"
-      className="relative border-t border-white/[0.06] bg-[#05070a] px-5 py-14 sm:px-8 lg:px-12 lg:py-20 xl:px-16"
+      className={`relative bg-[#05070a] ${isActivated ? "border-t border-white/[0.06] px-5 py-14 sm:px-8 lg:px-12 lg:py-20 xl:px-16" : "h-0 overflow-hidden border-0 p-0"}`}
       aria-labelledby="landing-agent-heading"
     >
-      <div className="mx-auto w-full max-w-2xl">
+      <div id="landing-agent-play" aria-hidden className="absolute -top-4" />
+      <div className="mx-auto w-full max-w-6xl">
         <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-5 shadow-[0_0_48px_-16px_rgba(34,211,238,0.12)] backdrop-blur-sm sm:p-6">
           <header className="mb-5 flex items-start gap-3 sm:mb-6">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-cyan-500/10 text-cyan-400">
@@ -93,43 +113,77 @@ export function LandingAgent() {
                 >
                   See it in action
                 </h2>
-                {lastIntent ? (
-                  <span className="text-[0.6875rem] text-slate-500">· {formatIntentLabel(lastIntent)}</span>
-                ) : null}
               </div>
               <p className="text-pretty text-sm leading-relaxed text-slate-400">
-                Ask how the vault, graph, and footprint scan work—grounded answers, no marketing fluff.
+                Live preview: run a scan, watch ingestion progress, then inspect account matches.
               </p>
             </div>
           </header>
 
-          <div className="flex flex-col gap-5">
-            <AgentMessageList messages={messages} loading={loading} />
-
-            {lastCta && lastCta.type !== "none" ? (
-              <div className="flex flex-wrap justify-center gap-2 sm:justify-start">
-                <Link
-                  href={lastCta.href}
-                  className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "gap-1.5 font-medium")}
-                >
-                  {lastCta.label}
-                </Link>
+          <div className="space-y-4">
+            <div className="rounded-xl border border-cyan-900/45 bg-[#081229]/80 p-3 sm:p-4">
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-2 rounded-xl border border-slate-700/80 bg-[#071022]/95 px-3 py-2.5">
+                  <span className="font-mono text-[10px] uppercase tracking-wide text-slate-500">Username</span>
+                  <p className="font-mono text-sm text-slate-200">johndoe</p>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-cyan-950/90">
+                  <div
+                    className={`h-full rounded-full bg-cyan-400 transition-all duration-500 ${loading ? "animate-pulse" : ""}`}
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <span className="text-cyan-200/90">{runningText}</span>
+                  <span className="text-cyan-100/80">
+                    {visibleDemoResults} result{visibleDemoResults === 1 ? "" : "s"} found
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {PLATFORM_CHIPS.map((chip, idx) => (
+                    <span
+                      key={chip}
+                      className={`rounded border px-2 py-0.5 text-[10px] uppercase tracking-wide ${
+                        visibleDemoResults > 0 && idx < visibleDemoResults + 1
+                          ? "border-cyan-400/45 bg-cyan-500/10 text-cyan-200"
+                          : "border-slate-700/80 bg-slate-900/70 text-slate-500"
+                      }`}
+                    >
+                      {chip}
+                    </span>
+                  ))}
+                </div>
               </div>
-            ) : null}
-
-            {error ? (
-              <p className="text-center text-sm text-destructive" role="alert">
-                {error}
-              </p>
-            ) : null}
-
-            <div className="space-y-2.5">
-              <p className="text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground/80">Suggestions</p>
-              <AgentPromptChips prompts={suggestedPrompts} disabled={loading} onSelect={(p) => void send(p)} />
             </div>
 
-            <AgentInput value={draft} onChange={setDraft} loading={loading} onSubmit={() => void send(draft)} />
-            <div ref={bottomRef} />
+            <div className="grid gap-3 sm:grid-cols-3">
+              {DEMO_RESULTS.slice(0, visibleDemoResults).map((r) => (
+                <article key={r.platform} className="rounded-xl border border-cyan-400/30 bg-slate-900/85 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-cyan-300/90">{r.platform}</p>
+                  <p className="mt-1 text-sm font-semibold text-cyan-50">{r.title}</p>
+                  <p className="text-xs text-cyan-100/70">{r.handle}</p>
+                  <p className="mt-2 text-xs text-cyan-100/70">{r.detail}</p>
+                  <p className="mt-1 text-xs text-cyan-200">{r.meta}</p>
+                </article>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap justify-center gap-2 sm:justify-start">
+              <button
+                type="button"
+                onClick={() => void playQuickDemo()}
+                disabled={loading}
+                className="inline-flex h-10 items-center justify-center rounded-full border border-white/15 px-5 text-xs font-semibold uppercase tracking-wide text-slate-300 transition hover:border-cyan-500/40 hover:text-white disabled:opacity-60"
+              >
+                Replay demo
+              </button>
+              <Link
+                href="/sign-in"
+                className="inline-flex h-10 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 via-cyan-500 to-teal-600 px-5 text-xs font-bold uppercase tracking-wide text-black shadow-[0_0_28px_-4px_rgba(34,211,238,0.45)] transition hover:shadow-[0_0_36px_-2px_rgba(34,211,238,0.55)]"
+              >
+                Scan now
+              </Link>
+            </div>
           </div>
         </div>
       </div>

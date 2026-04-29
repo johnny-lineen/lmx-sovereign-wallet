@@ -73,7 +73,7 @@ export function LandingPage() {
                   Scan now
                 </Link>
                 <Link
-                  href="#landing-agent"
+                  href="#landing-agent-play"
                   className="group inline-flex items-center gap-2 text-sm font-medium text-slate-400 transition-colors hover:text-white"
                 >
                   <span className="flex size-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white transition-colors group-hover:border-cyan-500/30 group-hover:bg-cyan-500/10">
@@ -95,9 +95,9 @@ export function LandingPage() {
           </div>
         </section>
 
-        <LandingMarketingSections />
-
         <LandingAgent />
+
+        <LandingMarketingSections />
 
         <section
           id="waitlist"

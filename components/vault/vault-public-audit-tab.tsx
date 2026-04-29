@@ -40,6 +40,7 @@ type CandidateRow = {
   status: string;
   snippet: string | null;
   url: string | null;
+  rawData?: unknown;
   createdVaultItemId: string | null;
 };
 
@@ -85,6 +86,72 @@ function sourceChipTone(name: string) {
 function titleInitial(title: string) {
   const first = title.trim().charAt(0);
   return first ? first.toUpperCase() : "?";
+}
+
+type CandidateUserMeta = {
+  username: string | null;
+  displayName: string | null;
+  bio: string | null;
+  location: string | null;
+  followers: number | null;
+  following: number | null;
+  posts: number | null;
+  verified: boolean | null;
+};
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function readString(raw: Record<string, unknown>, keys: string[]): string | null {
+  for (const k of keys) {
+    const v = raw[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+function readNumber(raw: Record<string, unknown>, keys: string[]): number | null {
+  for (const k of keys) {
+    const v = raw[k];
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim()) {
+      const n = Number(v.replaceAll(",", ""));
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return null;
+}
+
+function readBoolean(raw: Record<string, unknown>, keys: string[]): boolean | null {
+  for (const k of keys) {
+    const v = raw[k];
+    if (typeof v === "boolean") return v;
+  }
+  return null;
+}
+
+function extractCandidateUserMeta(rawData: unknown): CandidateUserMeta | null {
+  const raw = toRecord(rawData);
+  if (!raw) return null;
+
+  const username = readString(raw, ["username", "userName", "handle", "screen_name", "slug"]);
+  const displayName = readString(raw, ["displayName", "display_name", "name", "fullName"]);
+  const bio = readString(raw, ["bio", "description", "headline", "about"]);
+  const location = readString(raw, ["location", "city", "region", "country"]);
+  const followers = readNumber(raw, ["followers", "followersCount", "followerCount", "subscriberCount"]);
+  const following = readNumber(raw, ["following", "followingCount", "friendsCount"]);
+  const posts = readNumber(raw, ["posts", "postCount", "statusesCount", "tweetCount"]);
+  const verified = readBoolean(raw, ["verified", "isVerified"]);
+
+  const hasAny = [username, displayName, bio, location, followers, following, posts, verified].some((v) => v !== null);
+  if (!hasAny) return null;
+  return { username, displayName, bio, location, followers, following, posts, verified };
+}
+
+function compactNumber(value: number): string {
+  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
 export function VaultPublicAuditTab({ highlightRunId }: { highlightRunId: string | null }) {
@@ -698,6 +765,7 @@ export function VaultPublicAuditTab({ highlightRunId }: { highlightRunId: string
                         {section.candidates.map((c) => {
                           const isPending = c.status === "pending";
                           const checked = selectedAuditIds.has(c.id);
+                          const userMeta = extractCandidateUserMeta(c.rawData);
                           return (
                             <li
                               key={c.id}
@@ -738,6 +806,50 @@ export function VaultPublicAuditTab({ highlightRunId }: { highlightRunId: string
                                   {c.proposedVaultType.replaceAll("_", " ")} · {c.confidenceBand} (
                                   {Math.round(c.confidenceScore * 100)}%)
                                 </p>
+                                {userMeta ? (
+                                  <div className="flex flex-wrap gap-1.5 text-[10px] text-cyan-100/80">
+                                    {userMeta.username ? (
+                                      <span className="rounded border border-cyan-300/35 bg-slate-800/75 px-1.5 py-0.5">
+                                        @{userMeta.username.replace(/^@+/, "")}
+                                      </span>
+                                    ) : null}
+                                    {userMeta.followers !== null ? (
+                                      <span className="rounded border border-cyan-300/35 bg-slate-800/75 px-1.5 py-0.5">
+                                        {compactNumber(userMeta.followers)} followers
+                                      </span>
+                                    ) : null}
+                                    {userMeta.following !== null ? (
+                                      <span className="rounded border border-cyan-300/35 bg-slate-800/75 px-1.5 py-0.5">
+                                        {compactNumber(userMeta.following)} following
+                                      </span>
+                                    ) : null}
+                                    {userMeta.posts !== null ? (
+                                      <span className="rounded border border-cyan-300/35 bg-slate-800/75 px-1.5 py-0.5">
+                                        {compactNumber(userMeta.posts)} posts
+                                      </span>
+                                    ) : null}
+                                    {userMeta.verified ? (
+                                      <span className="rounded border border-cyan-300/35 bg-slate-800/75 px-1.5 py-0.5">
+                                        Verified
+                                      </span>
+                                    ) : null}
+                                    {userMeta.location ? (
+                                      <span className="rounded border border-cyan-300/35 bg-slate-800/75 px-1.5 py-0.5">
+                                        {userMeta.location}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                                {userMeta?.displayName ? (
+                                  <p className="text-xs leading-relaxed text-cyan-100/70 line-clamp-1">
+                                    {userMeta.displayName}
+                                  </p>
+                                ) : null}
+                                {userMeta?.bio ? (
+                                  <p className="text-xs leading-relaxed text-cyan-100/65 line-clamp-2">
+                                    {userMeta.bio}
+                                  </p>
+                                ) : null}
                                 {c.snippet ? (
                                   <p className="text-xs leading-relaxed text-cyan-100/65 line-clamp-3">
                                     {c.snippet}
