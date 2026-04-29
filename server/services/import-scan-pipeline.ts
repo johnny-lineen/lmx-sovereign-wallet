@@ -17,11 +17,11 @@ export type ScanRelationPlanEntry = {
   normalizedProviderDomain: string;
 };
 
-function parseMinConfidence(): number {
+export function importMinCandidateConfidence(): number {
   const raw = process.env.IMPORT_MIN_CANDIDATE_CONFIDENCE?.trim();
-  if (!raw) return 0.32;
+  if (!raw) return 0.28;
   const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0 || n > 1) return 0.32;
+  if (!Number.isFinite(n) || n < 0 || n > 1) return 0.28;
   return n;
 }
 
@@ -83,7 +83,7 @@ export function buildImportRowsFromExtracted(params: {
   stats: PipelineStats;
   relationPlan: ScanRelationPlanEntry[];
 } {
-  const minConf = parseMinConfidence();
+  const minConf = importMinCandidateConfidence();
   const emittedAccount = params.extracted.filter((e) => e.suggestedType === "account").length;
   const emittedSub = params.extracted.filter((e) => e.suggestedType === "subscription").length;
   const domains = new Set(

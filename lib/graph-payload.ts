@@ -22,6 +22,8 @@ export type GraphNodePayload = {
   metadataPreview: GraphMetadataPreview;
   /** Vault rows merged into this canonical node (1 = none merged). */
   mergeGroupSize: number;
+  /** Present when item was imported from a public footprint audit run. */
+  importedFromAuditRunId?: string | null;
 };
 
 export type GraphEdgePayload = {

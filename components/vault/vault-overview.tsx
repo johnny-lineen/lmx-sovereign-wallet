@@ -4,7 +4,7 @@ import type { VaultLibraryDTO } from "@/server/services/vault.service";
 
 function TypePill({ type }: { type: string }) {
   return (
-    <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+    <span className="rounded-full border border-cyan-300/35 bg-slate-900/80 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-cyan-100/80">
       {type.replaceAll("_", " ")}
     </span>
   );
@@ -97,54 +97,72 @@ export function VaultOverview({
     .sort((a, b) => b[1].size - a[1].size)
     .slice(0, 5);
 
+  const initialFor = (title: string) => {
+    const first = title.trim().charAt(0);
+    return first ? first.toUpperCase() : "?";
+  };
+
   return (
     <div className="space-y-10">
       <div className="flex flex-wrap items-baseline gap-3">
-        <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">{library.items.length}</span> items ·{" "}
-          <span className="font-medium text-foreground">{library.relationships.length}</span> relationships
+        <p className="text-sm text-cyan-100/75">
+          <span className="font-medium text-cyan-50">{library.items.length}</span> items ·{" "}
+          <span className="font-medium text-cyan-50">{library.relationships.length}</span> relationships
         </p>
-        <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">{emailItems.length}</span> emails ·{" "}
-          <span className="font-medium text-foreground">{distinctProviders}</span> providers
+        <p className="text-sm text-cyan-100/75">
+          <span className="font-medium text-cyan-50">{emailItems.length}</span> emails ·{" "}
+          <span className="font-medium text-cyan-50">{distinctProviders}</span> providers
         </p>
       </div>
       {highFrag.length > 0 ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-cyan-100/65">
           High-fragmentation clusters: {highFrag.map(([p, ids]) => `${p} (${ids.size} emails)`).join(" · ")}
         </p>
       ) : null}
 
       <section className="space-y-4">
         <div>
-          <h3 className="text-lg font-medium tracking-tight">Vault items</h3>
-          <p className="text-sm text-muted-foreground">Grouped by type. Open metadata for full JSON.</p>
+          <h3 className="text-lg font-medium tracking-tight text-cyan-50">Vault items</h3>
+          <p className="text-sm text-cyan-100/70">Grouped by type. Open metadata for full JSON.</p>
         </div>
         <div className="space-y-8">
           {types.map((type) => (
             <div key={type}>
               <div className="mb-3 flex items-center gap-2">
                 <TypePill type={type} />
-                <span className="text-xs text-muted-foreground">{(byType.get(type) ?? []).length} items</span>
+                <span className="text-xs text-cyan-100/65">{(byType.get(type) ?? []).length} items</span>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 {(byType.get(type) ?? []).map((item) => (
-                  <Card key={item.id} size="sm">
+                  <Card key={item.id} size="sm" className="border-cyan-400/35 bg-slate-950/85 shadow-[0_0_0_1px_rgba(56,189,248,0.08)]">
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-sm leading-snug">{item.title}</CardTitle>
-                      {item.summary ? <CardDescription className="line-clamp-2">{item.summary}</CardDescription> : null}
+                      <div className="flex gap-3">
+                        <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-cyan-300/35 bg-slate-800/90 text-sm font-semibold text-cyan-100">
+                          {initialFor(item.title)}
+                        </span>
+                        <div className="min-w-0">
+                          <CardTitle className="truncate text-sm leading-snug text-cyan-50">{item.title}</CardTitle>
+                          {item.summary ? (
+                            <CardDescription className="line-clamp-2 text-cyan-100/65">{item.summary}</CardDescription>
+                          ) : null}
+                        </div>
+                      </div>
                     </CardHeader>
                     <CardContent className="space-y-2 pt-0">
-                      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                        {item.provider ? <span>Provider: {item.provider}</span> : null}
-                        <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] uppercase">
+                      <div className="flex flex-wrap gap-2 text-xs text-cyan-100/70">
+                        {item.provider ? (
+                          <span className="rounded border border-cyan-300/30 bg-slate-900/80 px-1.5 py-0.5">
+                            {item.provider}
+                          </span>
+                        ) : null}
+                        <span className="rounded border border-cyan-300/35 bg-slate-800/80 px-1.5 py-0.5 font-mono text-[10px] uppercase text-cyan-200/85">
                           {item.status}
                         </span>
                       </div>
                       {item.metadata != null ? (
-                        <details className="rounded-md border border-border/60 bg-muted/20 p-2">
-                          <summary className="cursor-pointer text-xs text-muted-foreground">Metadata</summary>
-                          <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all text-[11px] leading-relaxed">
+                        <details className="rounded-md border border-cyan-300/25 bg-slate-900/70 p-2">
+                          <summary className="cursor-pointer text-xs text-cyan-100/70">Metadata</summary>
+                          <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all text-[11px] leading-relaxed text-cyan-100/80">
                             {JSON.stringify(item.metadata, null, 2)}
                           </pre>
                         </details>
@@ -162,12 +180,12 @@ export function VaultOverview({
 
       <section className="space-y-4">
         <div>
-          <h3 className="text-lg font-medium tracking-tight">Relationships</h3>
-          <p className="text-sm text-muted-foreground">Edges between vault items for the signed-in account.</p>
+          <h3 className="text-lg font-medium tracking-tight text-cyan-50">Relationships</h3>
+          <p className="text-sm text-cyan-100/70">Edges between vault items for the signed-in account.</p>
         </div>
-        <div className="overflow-x-auto rounded-xl ring-1 ring-foreground/10">
+        <div className="overflow-x-auto rounded-xl border border-cyan-400/30 bg-slate-950/80">
           <table className="w-full min-w-[640px] border-collapse text-left text-sm">
-            <thead className="border-b border-border bg-muted/30">
+            <thead className="border-b border-cyan-300/25 bg-slate-900/70">
               <tr>
                 <th className="px-3 py-2 font-medium">From</th>
                 <th className="px-3 py-2 font-medium">Relation</th>
@@ -177,21 +195,21 @@ export function VaultOverview({
             </thead>
             <tbody>
               {library.relationships.map((rel) => (
-                <tr key={rel.id} className="border-b border-border/60 last:border-0">
+                <tr key={rel.id} className="border-b border-cyan-300/20 last:border-0">
                   <td className="px-3 py-2 align-top">
-                    <div className="font-medium">{rel.fromTitle}</div>
+                    <div className="font-medium text-cyan-50">{rel.fromTitle}</div>
                     <div className="mt-0.5">
                       <TypePill type={rel.fromType} />
                     </div>
                   </td>
-                  <td className="px-3 py-2 align-top font-mono text-xs text-muted-foreground">{rel.relationType}</td>
+                  <td className="px-3 py-2 align-top font-mono text-xs text-cyan-100/70">{rel.relationType}</td>
                   <td className="px-3 py-2 align-top">
-                    <div className="font-medium">{rel.toTitle}</div>
+                    <div className="font-medium text-cyan-50">{rel.toTitle}</div>
                     <div className="mt-0.5">
                       <TypePill type={rel.toType} />
                     </div>
                   </td>
-                  <td className="max-w-[220px] px-3 py-2 align-top text-xs text-muted-foreground">
+                  <td className="max-w-[220px] px-3 py-2 align-top text-xs text-cyan-100/70">
                     {rel.metadata != null ? (
                       <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-all text-[11px]">
                         {JSON.stringify(rel.metadata)}

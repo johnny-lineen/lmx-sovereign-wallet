@@ -128,3 +128,23 @@ export async function findVaultRelationshipForUser(
     select: { id: true },
   });
 }
+
+export async function findVaultItemByPublicAuditDedupe(
+  userId: string,
+  dedupeKey: string,
+  tx?: Prisma.TransactionClient,
+): Promise<{ id: string } | null> {
+  const db = tx ?? prisma;
+  const key = dedupeKey.trim().toLowerCase();
+  if (!key) return null;
+  return db.vaultItem.findFirst({
+    where: {
+      userId,
+      metadata: {
+        path: ["public_audit_dedupe"],
+        equals: key,
+      },
+    },
+    select: { id: true },
+  });
+}

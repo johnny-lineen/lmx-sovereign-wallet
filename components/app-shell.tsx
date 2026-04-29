@@ -37,12 +37,12 @@ export function AppShell({
   const isGraphWorkspace = pathname === "/graph" || pathname.startsWith("/graph/");
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background md:flex-row">
-      <aside className="hidden w-56 shrink-0 border-b border-border/80 bg-sidebar md:flex md:flex-col md:border-b-0 md:border-r md:border-border/80">
-        <div className="flex h-14 items-center border-b border-sidebar-border px-4">
+    <div className="dark flex min-h-dvh flex-col bg-[#05070a] text-slate-200 md:flex-row">
+      <aside className="hidden w-56 shrink-0 border-b border-white/[0.08] bg-[#0a0d14] md:flex md:flex-col md:border-b-0 md:border-r md:border-white/[0.08]">
+        <div className="flex h-14 items-center border-b border-white/[0.08] px-4">
           <Link
             href="/dashboard"
-            className="font-heading text-sm font-semibold tracking-tight text-sidebar-foreground sm:text-base"
+            className="font-heading text-sm font-semibold tracking-tight text-slate-100 sm:text-base"
           >
             LMX Sovereign Wallet
           </Link>
@@ -57,11 +57,11 @@ export function AppShell({
                 className={cn(
                   "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   active
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+                    ? "bg-cyan-500/15 text-cyan-200 ring-1 ring-cyan-400/30"
+                    : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-100",
                 )}
               >
-                <Icon className="size-4 shrink-0 opacity-70" aria-hidden />
+                <Icon className="size-4 shrink-0 opacity-80" aria-hidden />
                 {label}
               </Link>
             );
@@ -75,7 +75,7 @@ export function AppShell({
           isGraphWorkspace && "md:min-h-dvh",
         )}
       >
-        <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border/80 bg-background/85 px-4 text-foreground backdrop-blur-md supports-[backdrop-filter]:bg-background/70 md:px-6">
+        <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-white/[0.08] bg-[#05070a]/90 px-4 text-slate-100 backdrop-blur-md supports-[backdrop-filter]:bg-[#05070a]/75 md:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <Link
               href="/dashboard"
@@ -92,7 +92,7 @@ export function AppShell({
                     href={href}
                     className={cn(
                       "whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium",
-                      active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+                      active ? "bg-cyan-500/20 text-cyan-200" : "bg-white/[0.04] text-slate-400",
                     )}
                   >
                     {label}

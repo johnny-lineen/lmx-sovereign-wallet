@@ -13,6 +13,7 @@ type ItemRow = {
   id: string;
   type: VaultItemType;
   title: string;
+  metadata: Record<string, unknown> | null;
 };
 
 type RelRow = {
@@ -256,6 +257,77 @@ export function buildInsightsFromVaultData(items: ItemRow[], relationships: RelR
     });
   }
 
+  // --- Public footprint audit (metadata.source === public_audit) ---
+  const auditItems = items.filter((i) => i.metadata?.source === "public_audit");
+  if (auditItems.length > 0) {
+    const profileLike = auditItems.filter(
+      (i) => i.type === "social_account" || i.type === "identity_profile",
+    );
+    const breachLike = auditItems.filter(
+      (i) => i.type === "custom" && i.metadata?.auditSubtype === "breach_event",
+    );
+    const brokerLike = auditItems.filter(
+      (i) => i.type === "custom" && i.metadata?.auditSubtype === "data_broker_listing",
+    );
+
+    insights.push({
+      type: "insight",
+      title: `${auditItems.length} vault item(s) sourced from public footprint audit`,
+      description: `These entries were inferred from public or approved signals and are confidence-scored. Breakdown: ${profileLike.length} profile-like, ${breachLike.length} exposure-like, ${brokerLike.length} broker-like (by metadata hints).`,
+      severity: "low",
+      relatedItemIds: sortUniqueIds(auditItems.map((i) => i.id)),
+    });
+
+    if (breachLike.length > 0) {
+      insights.push({
+        type: "risk",
+        title: `${breachLike.length} exposure signal(s) linked to audited identifiers`,
+        description:
+          "Breach or exposure findings are not proof of active compromise; treat them as signals to verify and rotate credentials where appropriate.",
+        severity: "medium",
+        relatedItemIds: sortUniqueIds(breachLike.map((i) => i.id)),
+      });
+    }
+
+    const emailNeighbors = new Map<string, Set<string>>();
+    for (const rel of relationships) {
+      if (rel.relationType !== "uses_email" && rel.relationType !== "linked_to") continue;
+      const a = byId.get(rel.fromItemId);
+      const b = byId.get(rel.toItemId);
+      if (!a || !b) continue;
+
+      let emailId: string | null = null;
+      let auditItem: ItemRow | null = null;
+      if (a.type === "email" && b.metadata?.source === "public_audit") {
+        emailId = a.id;
+        auditItem = b;
+      } else if (b.type === "email" && a.metadata?.source === "public_audit") {
+        emailId = b.id;
+        auditItem = a;
+      }
+      if (!emailId || !auditItem) continue;
+
+      let set = emailNeighbors.get(emailId);
+      if (!set) {
+        set = new Set();
+        emailNeighbors.set(emailId, set);
+      }
+      set.add(auditItem.id);
+    }
+    for (const [emailId, set] of emailNeighbors) {
+      if (set.size < 3) continue;
+      const email = byId.get(emailId);
+      const label = email?.title?.trim() || "an email";
+      insights.push({
+        type: "insight",
+        title: "Public identity concentration around one email",
+        description: `${set.size} public-audit items link to “${label}”. Consider whether that inbox is your primary public anchor.`,
+        severity: "low",
+        relatedItemIds: sortUniqueIds([emailId, ...set]),
+      });
+    }
+  }
+
   insights.sort(compareInsights);
   return insights;
 }
@@ -303,6 +375,10 @@ export async function generateInsightsForUser(userId: string): Promise<Insight[]
     id: i.id,
     type: i.type,
     title: i.title,
+    metadata:
+      i.metadata && typeof i.metadata === "object" && !Array.isArray(i.metadata)
+        ? (i.metadata as Record<string, unknown>)
+        : null,
   }));
   const relRows: RelRow[] = relationships.map((r) => ({
     fromItemId: r.fromItemId,

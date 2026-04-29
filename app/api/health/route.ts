@@ -1,9 +1,15 @@
+import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
 import { logError, sendOpsAlert } from "@/lib/observability";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
+  const { userId } = await auth();
+  if (!userId) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     await prisma.$queryRaw`SELECT 1`;
     return NextResponse.json({

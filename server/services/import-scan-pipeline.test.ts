@@ -10,6 +10,7 @@ import {
   buildImportRowsFromExtracted,
   buildRelationPlanForExtracted,
   confidenceFromExtractedCandidate,
+  importMinCandidateConfidence,
   IMPORT_EXTRACTOR_VERSION,
 } from "@/server/services/import-scan-pipeline";
 
@@ -137,4 +138,33 @@ test("GmailMessageMeta fixtures produce stable domain-based dedupe keys", () => 
   const extracted = aggregateImportCandidatesFromMessages(metas);
   assert.ok(extracted.length >= 1);
   assert.ok(extracted.every((e) => e.dedupeKey.includes("spotify.com")));
+});
+
+test("importMinCandidateConfidence defaults to 0.28 when unset", () => {
+  const prev = process.env.IMPORT_MIN_CANDIDATE_CONFIDENCE;
+  delete process.env.IMPORT_MIN_CANDIDATE_CONFIDENCE;
+  try {
+    assert.equal(importMinCandidateConfidence(), 0.28);
+  } finally {
+    if (prev === undefined) {
+      delete process.env.IMPORT_MIN_CANDIDATE_CONFIDENCE;
+    } else {
+      process.env.IMPORT_MIN_CANDIDATE_CONFIDENCE = prev;
+    }
+  }
+});
+
+test("subscription renewal signals emit subscription candidate with relaxed threshold", () => {
+  const metas: GmailMessageMeta[] = [
+    {
+      messageId: "s1",
+      subject: "Your monthly billing update",
+      snippet: "Your plan renews on April 30. You will be charged to your payment method on file.",
+      fromRaw: "Canva Billing <billing@canva.com>",
+      fromEmail: "billing@canva.com",
+      fromDomain: "canva.com",
+    },
+  ];
+  const extracted = aggregateImportCandidatesFromMessages(metas);
+  assert.ok(extracted.some((candidate) => candidate.suggestedType === "subscription"));
 });

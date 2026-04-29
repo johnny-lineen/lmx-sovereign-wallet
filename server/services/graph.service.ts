@@ -84,6 +84,12 @@ function metadataPreviewFromItem(item: VaultItemDTO): GraphMetadataPreview {
   return preview;
 }
 
+function importedAuditRunIdFromMetadata(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const v = (metadata as Record<string, unknown>).importedFromAuditRunId;
+  return typeof v === "string" && v.trim().length > 0 ? v.trim() : null;
+}
+
 function itemToNode(item: VaultItemDTO, mergeGroupSize = 1): GraphNodePayload {
   const metadataPreview = metadataPreviewFromItem(item);
   return {
@@ -93,6 +99,7 @@ function itemToNode(item: VaultItemDTO, mergeGroupSize = 1): GraphNodePayload {
     provider: item.provider,
     metadataPreview,
     mergeGroupSize,
+    importedFromAuditRunId: importedAuditRunIdFromMetadata(item.metadata),
   };
 }
 

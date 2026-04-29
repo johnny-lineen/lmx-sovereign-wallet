@@ -12,7 +12,6 @@ import {
 import ForceGraph2D, { type ForceGraphMethods, type GraphData } from "react-force-graph-2d";
 
 import type { GraphNodePayload } from "@/lib/graph-payload";
-import { layoutJitterUnit } from "@/lib/graph-layout";
 
 import {
   FORCE_GRAPH_BG,

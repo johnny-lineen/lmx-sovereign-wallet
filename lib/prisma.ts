@@ -83,7 +83,22 @@ function createPrismaClient(): PrismaClient {
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined };
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
+/**
+ * After `prisma generate`, new model delegates exist on the PrismaClient class. In dev, `globalThis.prisma`
+ * can still hold an instance from before generate (singleton pattern), so delegates like `publicAuditRun`
+ * are missing (`undefined`) until the process restarts. Drop the cache and build a fresh client.
+ */
+function prismaClientHasPublicAuditDelegates(client: PrismaClient): boolean {
+  return typeof (client as unknown as Record<string, unknown>).publicAuditRun === "object";
+}
+
+let prismaCandidate = globalForPrisma.prisma ?? createPrismaClient();
+if (!prismaClientHasPublicAuditDelegates(prismaCandidate)) {
+  globalForPrisma.prisma = undefined;
+  prismaCandidate = createPrismaClient();
+}
+
+export const prisma = prismaCandidate;
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;

@@ -52,13 +52,24 @@ export async function POST(request: Request) {
         ? 404
         : result.code === "IMPORT_COOLDOWN"
           ? 429
-          : result.code === "CONNECTOR_NOT_FOUND" || result.code === "PROFILE_EMAIL_INVALID"
+          : result.code === "GMAIL_REAUTH_REQUIRED"
+            ? 400
+          : result.code === "CONNECTOR_NOT_FOUND" ||
+              result.code === "PROFILE_EMAIL_INVALID" ||
+              result.code === "EMAIL_MISMATCH"
           ? 400
           : 502;
     return NextResponse.json(
       {
         error: result.code,
-        message: result.code === "GMAIL_ERROR" ? "Gmail import request failed." : result.message,
+        message:
+          result.code === "GMAIL_ERROR"
+            ? "Gmail import request failed."
+            : result.code === "GMAIL_REAUTH_REQUIRED"
+              ? "Gmail connection expired. Reconnect Gmail, then run scan again."
+              : result.code === "EMAIL_MISMATCH"
+                ? "Connected Gmail must exactly match the submitted profile email."
+              : result.message,
         retryAfterSeconds: result.retryAfterSeconds,
       },
       { status },
@@ -67,7 +78,9 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     jobId: result.jobId,
+    detectedCandidates: result.detectedCandidates,
     insertedCandidates: result.insertedCandidates,
+    dedupedCandidates: result.dedupedCandidates,
     messagesScanned: result.messagesScanned,
     profileEmailItemId: result.profileEmailItemId,
   });

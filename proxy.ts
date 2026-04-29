@@ -13,7 +13,8 @@ export default clerkMiddleware(async (auth, req) => {
   if (!isPublicRoute(req)) {
     await auth.protect();
     const { userId } = await auth();
-    const allowlistRaw = process.env.TEST_USER_ALLOWLIST?.trim();
+    const enforceAllowlist = process.env.TEST_USER_ALLOWLIST_ENFORCED?.trim() === "1";
+    const allowlistRaw = enforceAllowlist ? process.env.TEST_USER_ALLOWLIST?.trim() : "";
     if (allowlistRaw && userId) {
       const allowlist = new Set(
         allowlistRaw

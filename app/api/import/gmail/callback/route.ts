@@ -9,6 +9,7 @@ import * as gmailImportRepo from "@/server/repositories/gmail-import.repository"
 import { ensureUserAndRootLMXIdentity } from "@/server/services/identity-bootstrap.service";
 
 const STATE_COOKIE = "gmail_oauth_state";
+const RETURN_TO_COOKIE = "gmail_oauth_return_to";
 
 function appBaseUrl(): string {
   const explicit = env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "");
@@ -29,17 +30,26 @@ export async function GET(request: NextRequest) {
   const oauthError = url.searchParams.get("error");
 
   const redirectBase = appBaseUrl();
-  const vaultUrl = new URL("/vault", redirectBase);
+  const returnToRaw = request.cookies.get(RETURN_TO_COOKIE)?.value;
+  const returnTo =
+    typeof returnToRaw === "string" && returnToRaw.startsWith("/") && !returnToRaw.startsWith("//")
+      ? returnToRaw
+      : "/vault";
+  const returnUrl = new URL(returnTo, redirectBase);
 
   if (oauthError) {
-    vaultUrl.searchParams.set("gmail_error", oauthError);
-    return NextResponse.redirect(vaultUrl);
+    returnUrl.searchParams.set("gmail_error", oauthError);
+    const res = NextResponse.redirect(returnUrl);
+    res.cookies.delete(STATE_COOKIE);
+    res.cookies.delete(RETURN_TO_COOKIE);
+    return res;
   }
 
   if (!code || !state || !cookieState || state !== cookieState) {
-    vaultUrl.searchParams.set("gmail_error", "invalid_oauth_state");
-    const res = NextResponse.redirect(vaultUrl);
+    returnUrl.searchParams.set("gmail_error", "invalid_oauth_state");
+    const res = NextResponse.redirect(returnUrl);
     res.cookies.delete(STATE_COOKIE);
+    res.cookies.delete(RETURN_TO_COOKIE);
     return res;
   }
 
@@ -52,9 +62,10 @@ export async function GET(request: NextRequest) {
     const tr = await oauth2.getToken(code);
     tokens = tr.tokens;
   } catch {
-    vaultUrl.searchParams.set("gmail_error", "token_exchange_failed");
-    const res = NextResponse.redirect(vaultUrl);
+    returnUrl.searchParams.set("gmail_error", "token_exchange_failed");
+    const res = NextResponse.redirect(returnUrl);
     res.cookies.delete(STATE_COOKIE);
+    res.cookies.delete(RETURN_TO_COOKIE);
     return res;
   }
 
@@ -66,16 +77,18 @@ export async function GET(request: NextRequest) {
     const profile = await gmail.users.getProfile({ userId: "me" });
     gmailAddress = profile.data.emailAddress ?? undefined;
   } catch {
-    vaultUrl.searchParams.set("gmail_error", "profile_failed");
-    const res = NextResponse.redirect(vaultUrl);
+    returnUrl.searchParams.set("gmail_error", "profile_failed");
+    const res = NextResponse.redirect(returnUrl);
     res.cookies.delete(STATE_COOKIE);
+    res.cookies.delete(RETURN_TO_COOKIE);
     return res;
   }
 
   if (!gmailAddress) {
-    vaultUrl.searchParams.set("gmail_error", "no_email");
-    const res = NextResponse.redirect(vaultUrl);
+    returnUrl.searchParams.set("gmail_error", "no_email");
+    const res = NextResponse.redirect(returnUrl);
     res.cookies.delete(STATE_COOKIE);
+    res.cookies.delete(RETURN_TO_COOKIE);
     return res;
   }
 
@@ -86,9 +99,10 @@ export async function GET(request: NextRequest) {
   }
 
   if (!refreshToken) {
-    vaultUrl.searchParams.set("gmail_error", "no_refresh_token");
-    const res = NextResponse.redirect(vaultUrl);
+    returnUrl.searchParams.set("gmail_error", "no_refresh_token");
+    const res = NextResponse.redirect(returnUrl);
     res.cookies.delete(STATE_COOKIE);
+    res.cookies.delete(RETURN_TO_COOKIE);
     return res;
   }
 
@@ -102,8 +116,9 @@ export async function GET(request: NextRequest) {
     scopes: scopeStr,
   });
 
-  vaultUrl.searchParams.set("gmail_connected", "1");
-  const res = NextResponse.redirect(vaultUrl);
+  returnUrl.searchParams.set("gmail_connected", "1");
+  const res = NextResponse.redirect(returnUrl);
   res.cookies.delete(STATE_COOKIE);
+  res.cookies.delete(RETURN_TO_COOKIE);
   return res;
 }

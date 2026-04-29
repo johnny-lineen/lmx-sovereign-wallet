@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { z } from "zod";
 import { ChevronLeft, ChevronRight, Info, Maximize2, RotateCcw, Sparkles, Tags, X } from "lucide-react";
@@ -442,10 +443,18 @@ function GraphLegendCard() {
   );
 }
 
+type GraphSourceFilter = "all" | "public_audit" | "gmail_import" | "other";
+
+function graphProvenanceSource(node: GraphNodePayload): string {
+  return node.metadataPreview.provenance?.source?.trim() || "manual_or_unknown";
+}
+
 function GraphWorkspace({
   payload,
   typeFilter,
   onTypeFilterChange,
+  sourceFilter,
+  onSourceFilterChange,
   providerFilter,
   onProviderFilterChange,
   providerOptions,
@@ -459,10 +468,13 @@ function GraphWorkspace({
   aiExplanationLoading,
   aiExplanationError,
   emptyVault,
+  highlightAuditRunId,
 }: {
   payload: GraphPayload;
   typeFilter: "all" | z.infer<typeof vaultItemTypeSchema>;
   onTypeFilterChange: (v: "all" | z.infer<typeof vaultItemTypeSchema>) => void;
+  sourceFilter: GraphSourceFilter;
+  onSourceFilterChange: (v: GraphSourceFilter) => void;
   providerFilter: string;
   onProviderFilterChange: (v: string) => void;
   providerOptions: string[];
@@ -481,6 +493,7 @@ function GraphWorkspace({
   aiExplanationLoading: boolean;
   aiExplanationError: string | null;
   emptyVault: boolean;
+  highlightAuditRunId: string | null;
 }) {
   const graphRef = useRef<KnowledgeGraphHandle | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
@@ -496,18 +509,22 @@ function GraphWorkspace({
       if (typeFilter !== "all" && n.type !== typeFilter) return false;
       if (providerFilter && (n.provider ?? "").toLowerCase() !== providerFilter.toLowerCase()) return false;
       if (q && !n.label.toLowerCase().includes(q)) return false;
+      const src = graphProvenanceSource(n);
+      if (sourceFilter === "public_audit" && src !== "public_audit") return false;
+      if (sourceFilter === "gmail_import" && src !== "gmail_import") return false;
+      if (sourceFilter === "other" && (src === "public_audit" || src === "gmail_import")) return false;
       return true;
     });
     const ids = new Set(nodesFiltered.map((n) => n.id));
     const edgesFiltered = payload.edges.filter((e) => ids.has(e.source) && ids.has(e.target));
     return { nodesFiltered, edgesFiltered };
-  }, [payload, typeFilter, providerFilter, search]);
+  }, [payload, typeFilter, providerFilter, search, sourceFilter]);
 
   const layoutKey = useMemo(() => {
     if (emptyVault) return "empty";
     const ids = filtered.nodesFiltered.map((n) => n.id).sort().join("\0");
-    return `${typeFilter}\0${providerFilter}\0${search}\0${ids}`;
-  }, [emptyVault, filtered.nodesFiltered, typeFilter, providerFilter, search]);
+    return `${typeFilter}\0${sourceFilter}\0${providerFilter}\0${search}\0${ids}`;
+  }, [emptyVault, filtered.nodesFiltered, typeFilter, sourceFilter, providerFilter, search]);
 
   const graphData = useMemo(() => {
     const nodeIds = new Set(filtered.nodesFiltered.map((n) => n.id));
@@ -555,7 +572,17 @@ function GraphWorkspace({
     return { nodes, links };
   }, [filtered, showDerivedLinks, payload.overview.anchorEmailNodeId]);
 
-  const insightHighlightIds = useMemo(() => {
+  const auditHighlightIds = useMemo(() => {
+    const id = highlightAuditRunId?.trim();
+    if (!id) return new Set<string>();
+    const s = new Set<string>();
+    for (const n of payload.nodes) {
+      if (n.importedFromAuditRunId === id) s.add(n.id);
+    }
+    return s;
+  }, [payload.nodes, highlightAuditRunId]);
+
+  const modeInsightHighlightIds = useMemo(() => {
     const { nodesFiltered, edgesFiltered } = filtered;
     if (insightMode === "risk") {
       return riskHighlightIds(nodesFiltered, edgesFiltered, payload.overview.highFragmentationClusters);
@@ -566,6 +593,12 @@ function GraphWorkspace({
     }
     return new Set<string>();
   }, [insightMode, filtered, payload.overview.highFragmentationClusters]);
+
+  const insightHighlightIds = useMemo(() => {
+    const merged = new Set(modeInsightHighlightIds);
+    for (const x of auditHighlightIds) merged.add(x);
+    return merged;
+  }, [modeInsightHighlightIds, auditHighlightIds]);
 
   const highlightIds = useMemo(() => {
     const s = new Set<string>();
@@ -614,7 +647,9 @@ function GraphWorkspace({
           onSelectId={onSelectId}
           highlightIds={highlightIds}
           dimUnrelated={dimUnrelated}
-          insightDimActive={insightMode !== "none" && insightHighlightIds.size > 0}
+          insightDimActive={
+            (insightMode !== "none" && modeInsightHighlightIds.size > 0) || auditHighlightIds.size > 0
+          }
           insightHighlightIds={insightHighlightIds}
           showAllLinkLabels={showAllLinkLabels}
         />
@@ -666,6 +701,25 @@ function GraphWorkspace({
                         {humanizeVaultType(t)}
                       </option>
                     ))}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="graph-source-filter" className="text-xs text-zinc-400">
+                    Data source
+                  </Label>
+                  <select
+                    id="graph-source-filter"
+                    value={sourceFilter}
+                    onChange={(e) => onSourceFilterChange(e.target.value as GraphSourceFilter)}
+                    className={cn(
+                      "h-8 w-full rounded-lg border border-zinc-700 bg-zinc-900/80 px-2.5 text-sm text-zinc-100 outline-none",
+                      "focus-visible:border-sky-500/60 focus-visible:ring-2 focus-visible:ring-sky-500/30",
+                    )}
+                  >
+                    <option value="all">All sources</option>
+                    <option value="public_audit">Public audit</option>
+                    <option value="gmail_import">Gmail import</option>
+                    <option value="other">Other / manual</option>
                   </select>
                 </div>
                 <div className="space-y-1.5">
@@ -790,10 +844,14 @@ function GraphPageShell({ children }: { children: React.ReactNode }) {
 }
 
 export function VaultGraphView() {
+  const searchParams = useSearchParams();
+  const highlightAuditRunId = searchParams.get("highlightAudit");
+
   const [payload, setPayload] = useState<GraphPayload | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState<"all" | z.infer<typeof vaultItemTypeSchema>>("all");
+  const [sourceFilter, setSourceFilter] = useState<GraphSourceFilter>("all");
   const [providerFilter, setProviderFilter] = useState("");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -836,6 +894,8 @@ export function VaultGraphView() {
         nodes: (data.nodes ?? []).map((n) => ({
           ...n,
           mergeGroupSize: typeof n.mergeGroupSize === "number" ? n.mergeGroupSize : 1,
+          importedFromAuditRunId:
+            typeof n.importedFromAuditRunId === "string" ? n.importedFromAuditRunId : null,
         })),
         edges: data.edges ?? [],
       });
@@ -1019,6 +1079,8 @@ export function VaultGraphView() {
           payload={payload}
           typeFilter={typeFilter}
           onTypeFilterChange={setTypeFilter}
+          sourceFilter={sourceFilter}
+          onSourceFilterChange={setSourceFilter}
           providerFilter={providerFilter}
           onProviderFilterChange={setProviderFilter}
           providerOptions={providerOptions}
@@ -1032,6 +1094,7 @@ export function VaultGraphView() {
           aiExplanationLoading={aiExplanationLoading}
           aiExplanationError={aiExplanationError}
           emptyVault={emptyVault}
+          highlightAuditRunId={highlightAuditRunId}
         />
       </div>
     </GraphPageShell>

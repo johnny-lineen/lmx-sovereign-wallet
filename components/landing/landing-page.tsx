@@ -1,114 +1,120 @@
 import Link from "next/link";
+import { Layers, Play } from "lucide-react";
 
 import { DemoRequestForm } from "@/components/landing/demo-request-form";
-import { LandingHeader } from "@/components/landing/landing-header";
-import { LandingDivider, LandingHighlightPills, LandingStripe } from "@/components/landing/landing-page-accents";
-import { LandingProblemSection } from "@/components/landing/landing-problem-section";
-import { LandingSolutionRoadmapSection } from "@/components/landing/landing-solution-roadmap-section";
-import { LandingWireframes } from "@/components/landing/landing-wireframes";
-import { buttonVariants } from "@/components/ui/button-variants";
-import { GlobeWireframe } from "@/components/ui/globe";
+import { LandingFooter } from "@/components/landing/landing-footer";
+import { LandingAgent } from "@/components/landing/LandingAgent";
+import { LandingHeroPreview } from "@/components/landing/landing-hero-preview";
+import { LandingMarketingSections } from "@/components/landing/landing-marketing-sections";
+import { LandingTopBar } from "@/components/landing/landing-top-bar";
 import { cn } from "@/lib/utils";
+
+const pageBg = "bg-[#05070a] text-slate-200";
 
 export function LandingPage() {
   return (
-    <div data-page="landing" className="flex min-h-dvh flex-col bg-background text-foreground">
-      <LandingHeader />
+    <div data-page="landing" className={cn("flex min-h-dvh flex-col", pageBg)}>
+      <LandingTopBar />
 
       <main data-slot="landing-main" className="flex flex-1 flex-col">
         <section
           data-slot="landing-hero"
-          className="relative flex min-h-[calc(100dvh-3.5rem)] flex-col justify-center overflow-hidden bg-background px-4 py-16 sm:min-h-[calc(100dvh-4rem)] sm:px-6 lg:py-24"
+          className="relative flex flex-1 flex-col justify-center overflow-hidden px-5 py-16 sm:px-8 sm:py-20 lg:px-12 lg:py-24"
         >
-          {/* Hero wash: accent + primary glows on lighter charcoal base */}
           <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_95%_65%_at_50%_-28%,var(--accent),transparent_58%)]" />
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_45%_at_50%_0%,var(--primary)_0%,transparent_45%)] opacity-[0.14]" />
-            <div className="absolute -top-24 right-[10%] h-[24rem] w-[24rem] rounded-full bg-primary/22 blur-3xl" />
-            <div className="absolute -bottom-36 left-[6%] h-[28rem] w-[28rem] rounded-full bg-primary/10 blur-3xl" />
-            <div className="absolute -bottom-32 left-[8%] h-[26rem] w-[26rem] rounded-full bg-accent/90 blur-3xl" />
-            <div className="absolute inset-x-0 bottom-0 h-[42%] bg-gradient-to-t from-background via-background/40 to-transparent" />
             <div
-              className={cn(
-                "absolute left-1/2 top-[46%] w-[min(105vw,36rem)] -translate-x-1/2 -translate-y-1/2",
-                "opacity-[0.32] sm:top-1/2 sm:w-[min(95vw,40rem)] sm:opacity-[0.4]",
-              )}
-            >
-              <div className="aspect-square w-full">
-                <GlobeWireframe />
-              </div>
-            </div>
+              className="absolute inset-0 opacity-[0.12]"
+              style={{
+                backgroundImage: `linear-gradient(to right, rgba(148, 163, 184, 0.12) 1px, transparent 1px),
+                  linear-gradient(to bottom, rgba(148, 163, 184, 0.12) 1px, transparent 1px)`,
+                backgroundSize: "44px 44px",
+              }}
+            />
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(34,211,238,0.12),transparent_55%)]" />
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_45%_at_80%_60%,rgba(139,92,246,0.06),transparent_50%)]" />
           </div>
 
-          <div
-            data-slot="landing-hero-content"
-            className="relative z-10 mx-auto flex w-full max-w-3xl flex-col items-center gap-10 text-center"
-          >
-            <div className="space-y-6">
-              <p
-                data-slot="landing-eyebrow"
-                className="text-xs font-medium uppercase tracking-widest text-muted-foreground"
+          <div className="relative z-10 mx-auto grid w-full max-w-6xl gap-12 lg:grid-cols-2 lg:items-center lg:gap-16">
+            <div className="flex max-w-xl flex-col gap-8 text-center lg:text-left">
+              <div className="flex flex-col items-center gap-5 lg:items-start">
+                <p
+                  data-slot="landing-eyebrow"
+                  className="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-cyan-400/95"
+                >
+                  Footprint intelligence
+                </p>
+                <h1
+                  data-slot="landing-title"
+                  className="text-balance font-heading text-4xl font-semibold leading-[1.08] tracking-[-0.02em] text-white sm:text-5xl lg:text-[3.25rem]"
+                >
+                  See what the internet knows.
+                </h1>
+                <p
+                  data-slot="landing-lede"
+                  className="max-w-lg text-pretty text-base leading-relaxed text-slate-400 sm:text-[1.0625rem]"
+                >
+                  Public surfaces, breach signals, and inbox context—searched, enriched, and cross-referenced in one
+                  run. Clear intelligence from data you already have access to, in seconds.
+                </p>
+              </div>
+
+              <div
+                data-slot="landing-cta-row"
+                className="flex flex-col items-center gap-5 sm:flex-row sm:flex-wrap sm:justify-center lg:justify-start"
               >
-                Personal data, under your control
-              </p>
-              <h1
-                data-slot="landing-title"
-                className="text-balance font-heading text-4xl font-semibold tracking-tight text-foreground sm:text-5xl lg:text-6xl"
-              >
-                Your identity graph and sovereign wallet in one place
-              </h1>
-              <p
-                data-slot="landing-lede"
-                className="mx-auto max-w-2xl text-pretty text-lg leading-relaxed text-muted-foreground sm:text-xl"
-              >
-                Connect sources, see how your digital identity fits together, and act from a single
-                console—built for clarity, not clutter.
+                <Link
+                  href="/sign-in"
+                  className={cn(
+                    "inline-flex h-12 min-w-[11rem] items-center justify-center rounded-full px-8",
+                    "bg-gradient-to-br from-cyan-400 via-cyan-500 to-teal-600 text-sm font-bold uppercase tracking-wide text-black",
+                    "shadow-[0_0_32px_-4px_rgba(34,211,238,0.45)] transition-[transform,box-shadow] hover:shadow-[0_0_40px_-2px_rgba(34,211,238,0.55)] motion-safe:hover:scale-[1.02]",
+                  )}
+                >
+                  Scan now
+                </Link>
+                <Link
+                  href="#landing-agent"
+                  className="group inline-flex items-center gap-2 text-sm font-medium text-slate-400 transition-colors hover:text-white"
+                >
+                  <span className="flex size-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white transition-colors group-hover:border-cyan-500/30 group-hover:bg-cyan-500/10">
+                    <Play className="size-3.5 fill-current" aria-hidden />
+                  </span>
+                  See it in action
+                </Link>
+              </div>
+
+              <p className="flex items-center justify-center gap-2 text-xs text-slate-600 lg:justify-start">
+                <Layers className="size-3.5 text-cyan-500/60" aria-hidden />
+                <span>Built for sovereign identity mapping</span>
               </p>
             </div>
 
-            <DemoRequestForm />
-
-            <div
-              data-slot="landing-cta-row"
-              className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-center"
-            >
-              <Link
-                data-slot="landing-cta-primary"
-                href="/sign-in"
-                className={cn(buttonVariants({ size: "lg" }), "w-full justify-center sm:w-auto sm:min-w-[11rem]")}
-              >
-                Open console
-              </Link>
-              <Link
-                data-slot="landing-cta-secondary"
-                href="/sign-up"
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "lg" }),
-                  "w-full justify-center sm:w-auto",
-                )}
-              >
-                Create account
-              </Link>
+            <div className="mx-auto w-full max-w-md lg:mx-0 lg:max-w-none">
+              <LandingHeroPreview />
             </div>
           </div>
         </section>
 
-        <LandingStripe surface="alt">
-          <LandingHighlightPills />
-          <LandingDivider label="Why this exists" />
-          <LandingProblemSection />
-        </LandingStripe>
+        <LandingMarketingSections />
 
-        <LandingStripe surface="primary">
-          <LandingDivider label="Solution & roadmap" />
-          <LandingSolutionRoadmapSection />
-        </LandingStripe>
+        <LandingAgent />
 
-        <LandingStripe surface="alt">
-          <LandingDivider label="What's next" />
-          <LandingWireframes />
-        </LandingStripe>
+        <section
+          id="waitlist"
+          data-slot="landing-waitlist"
+          className="border-t border-white/[0.06] bg-[#05070a] px-5 py-14 sm:px-8 lg:px-12"
+        >
+          <div className="mx-auto max-w-md space-y-6 text-center">
+            <div className="space-y-2">
+              <h2 className="font-heading text-lg font-semibold text-white">Request early access</h2>
+              <p className="text-sm text-slate-500">Waitlist updates only. Unsubscribe anytime.</p>
+            </div>
+            <DemoRequestForm showFormHeader={false} surface="deep" />
+          </div>
+        </section>
       </main>
+
+      <LandingFooter />
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import { AppPageHeader } from "@/components/app-page-header";
-import { ProfileIngestionSection } from "@/components/vault/profile-ingestion-section";
-import { VaultOverview } from "@/components/vault/vault-overview";
+import { VaultPageTabs } from "@/components/vault/vault-page-tabs";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { profileFromClerkUser } from "@/lib/clerk-profile";
@@ -28,24 +27,23 @@ export default async function VaultPage() {
         title="Vault"
         description="Identity-linked items and relationships for your account."
       />
-      <Suspense
-        fallback={
-          <Card>
-            <CardHeader>
-              <Skeleton className="h-5 w-48" />
-              <Skeleton className="h-4 w-full max-w-md" />
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Skeleton className="h-8 w-full" />
-              <Skeleton className="h-8 w-full" />
-            </CardContent>
-          </Card>
-        }
-      >
-        <ProfileIngestionSection />
-      </Suspense>
       {library ? (
-        <VaultOverview library={library} clerkUserId={userId} />
+        <Suspense
+          fallback={
+            <Card>
+              <CardHeader>
+                <Skeleton className="h-5 w-48" />
+                <Skeleton className="h-4 w-full max-w-md" />
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Skeleton className="h-8 w-full" />
+                <Skeleton className="h-8 w-full" />
+              </CardContent>
+            </Card>
+          }
+        >
+          <VaultPageTabs library={library} clerkUserId={userId} />
+        </Suspense>
       ) : (
         <p className="text-sm text-muted-foreground">Could not load vault data for this session.</p>
       )}

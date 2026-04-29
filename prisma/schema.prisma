@@ -79,6 +79,29 @@ enum ImportCandidateStatus {
   rejected
 }
 
+enum PublicAuditRunStatus {
+  queued
+  running
+  awaiting_review
+  completed
+  failed
+}
+
+enum PublicAuditCandidateStatus {
+  pending
+  auto_imported
+  accepted
+  rejected
+  ignored
+  linked_existing
+}
+
+enum PublicAuditConfidenceBand {
+  high
+  medium
+  low
+}
+
 /// High-signal email class inferred by deterministic rules (not AI).
 enum ImportCandidateSignal {
   welcome_account
@@ -108,6 +131,8 @@ model User {
   gmailConnectors  GmailConnector[]
   importJobs       ImportJob[]
   importCandidates ImportCandidate[]
+  publicAuditRuns       PublicAuditRun[]
+  publicAuditCandidates PublicAuditCandidate[]
 }
 
 /// Sovereign identity node; one root identity per user is ensured at bootstrap.
@@ -143,8 +168,9 @@ model VaultItem {
   outgoingRelations           VaultRelationship[] @relation("VaultRelationFrom")
   incomingRelations           VaultRelationship[] @relation("VaultRelationTo")
   itemTags                    VaultItemTag[]
-  importJobsAsProfileEmail    ImportJob[]         @relation("ImportJobProfileEmail")
-  createdFromImportCandidates ImportCandidate[]   @relation("ImportCreatedVaultItem")
+  importJobsAsProfileEmail           ImportJob[]             @relation("ImportJobProfileEmail")
+  createdFromImportCandidates        ImportCandidate[]       @relation("ImportCreatedVaultItem")
+  createdFromPublicAuditCandidates   PublicAuditCandidate[]  @relation("PublicAuditCreatedVaultItem")
 
   @@index([userId])
   @@index([userId, type])
@@ -313,4 +339,55 @@ model ImportCandidate {
   @@unique([userId, dedupeKey])
   @@index([userId, status])
   @@index([importJobId])
+}
+
+/// One public footprint audit run for a user (inputs + lifecycle).
+model PublicAuditRun {
+  id               String                 @id @default(uuid())
+  userId           String
+  user             User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName         String
+  submittedEmail   String
+  usernamesJson    Json?
+  locationHint     String?
+  websiteHint      String?
+  notes            String?
+  status           PublicAuditRunStatus   @default(queued)
+  totalCandidates  Int                    @default(0)
+  importedCount    Int                    @default(0)
+  reviewCount      Int                    @default(0)
+  errorMessage     String?                @db.Text
+  metadata         Json?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  candidates       PublicAuditCandidate[]
+
+  @@index([userId, createdAt])
+}
+
+/// Candidate finding before vault import; scored and optionally reviewed.
+model PublicAuditCandidate {
+  id                 String                     @id @default(uuid())
+  auditRunId         String
+  auditRun           PublicAuditRun             @relation(fields: [auditRunId], references: [id], onDelete: Cascade)
+  userId             String
+  user               User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceType         String
+  sourceName         String
+  proposedVaultType  VaultItemType
+  title              String
+  url                String?
+  snippet            String?
+  matchedIdentifier  String?
+  confidenceScore    Float
+  confidenceBand     PublicAuditConfidenceBand
+  status             PublicAuditCandidateStatus @default(pending)
+  rawData            Json?
+  createdVaultItemId String?
+  createdVaultItem   VaultItem?                 @relation("PublicAuditCreatedVaultItem", fields: [createdVaultItemId], references: [id], onDelete: SetNull)
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  @@index([userId, status])
+  @@index([auditRunId])
 }

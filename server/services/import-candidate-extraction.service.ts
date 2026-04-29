@@ -184,7 +184,7 @@ const SIGNAL_PRIORITY: ImportCandidateSignal[] = [
 /** Minimum aggregated account score to emit an account candidate. */
 export const ACCOUNT_AGG_THRESHOLD = 14;
 /** Minimum aggregated subscription score to emit a subscription candidate. */
-export const SUBSCRIPTION_AGG_THRESHOLD = 13;
+export const SUBSCRIPTION_AGG_THRESHOLD = 12;
 /** Single-message “strong” bypass for account (after dampening). */
 const ACCOUNT_SINGLE_STRONG = 15;
 /** Single-message bypass for subscription. */
@@ -273,7 +273,7 @@ function analyzeMessage(meta: GmailMessageMeta): {
 
   const strongTransactional = matchedRules.some((r) => r.strongTransactional);
   const marketingHit = MARKETING_HINT.test(subject) || MARKETING_HINT.test(meta.snippet || "");
-  const dampen = marketingHit && !strongTransactional ? 0.35 : 1;
+  const dampen = marketingHit && !strongTransactional ? 0.45 : 1;
 
   const signalWeights = new Map<ImportCandidateSignal, { account: number; subscription: number }>();
 
@@ -474,8 +474,8 @@ export function aggregateImportCandidatesFromMessages(metas: GmailMessageMeta[])
     const emitSubscription =
       agg.subscriptionScore >= SUBSCRIPTION_AGG_THRESHOLD ||
       agg.maxSingleSubscription >= SUBSCRIPTION_SINGLE_STRONG ||
-      (agg.anyStrongSubscription && agg.subscriptionScore >= 11) ||
-      (agg.messagesForSubscription.length >= 2 && agg.subscriptionScore >= 11);
+      (agg.anyStrongSubscription && agg.subscriptionScore >= 10) ||
+      (agg.messagesForSubscription.length >= 2 && agg.subscriptionScore >= 10);
 
     const sampleSubjectsAccount = [...new Set(agg.messagesForAccount.map((m) => m.subject).filter(Boolean))];
     const sampleSubjectsSub = [...new Set(agg.messagesForSubscription.map((m) => m.subject).filter(Boolean))];
