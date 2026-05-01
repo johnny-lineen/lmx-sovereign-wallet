@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Layers, Play } from "lucide-react";
 
 import { DemoRequestForm } from "@/components/landing/demo-request-form";
+import { DemoUserModal } from "@/components/landing/demo-user-modal";
 import { LandingFooter } from "@/components/landing/landing-footer";
 import { LandingAgent } from "@/components/landing/LandingAgent";
 import { LandingHeroPreview } from "@/components/landing/landing-hero-preview";
@@ -41,26 +42,25 @@ export function LandingPage() {
                   data-slot="landing-eyebrow"
                   className="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-cyan-400/95"
                 >
-                  Footprint intelligence
+                  LMX sovereign wallet
                 </p>
                 <h1
                   data-slot="landing-title"
                   className="text-balance font-heading text-4xl font-semibold leading-[1.08] tracking-[-0.02em] text-white sm:text-5xl lg:text-[3.25rem]"
                 >
-                  See what the internet knows.
+                  See your footprint. Reduce risk fast.
                 </h1>
                 <p
                   data-slot="landing-lede"
                   className="max-w-lg text-pretty text-base leading-relaxed text-slate-400 sm:text-[1.0625rem]"
                 >
-                  Public surfaces, breach signals, and inbox context—searched, enriched, and cross-referenced in one
-                  run. Clear intelligence from data you already have access to, in seconds.
+                  LMX finds your exposed accounts, maps identity links, and shows what to fix first in one clear workflow.
                 </p>
               </div>
 
               <div
                 data-slot="landing-cta-row"
-                className="flex flex-col items-center gap-5 sm:flex-row sm:flex-wrap sm:justify-center lg:justify-start"
+                className="flex flex-col items-center gap-4 sm:flex-row sm:flex-nowrap sm:justify-center lg:justify-start"
               >
                 <Link
                   href="/sign-in"
@@ -72,9 +72,10 @@ export function LandingPage() {
                 >
                   Scan now
                 </Link>
+                <DemoUserModal />
                 <Link
                   href="#landing-agent-play"
-                  className="group inline-flex items-center gap-2 text-sm font-medium text-slate-400 transition-colors hover:text-white"
+                  className="group inline-flex items-center gap-2 whitespace-nowrap text-sm font-medium text-slate-400 transition-colors hover:text-white"
                 >
                   <span className="flex size-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white transition-colors group-hover:border-cyan-500/30 group-hover:bg-cyan-500/10">
                     <Play className="size-3.5 fill-current" aria-hidden />
@@ -85,7 +86,7 @@ export function LandingPage() {
 
               <p className="flex items-center justify-center gap-2 text-xs text-slate-600 lg:justify-start">
                 <Layers className="size-3.5 text-cyan-500/60" aria-hidden />
-                <span>Built for sovereign identity mapping</span>
+                <span>One workflow: discover, map, prioritize, and take action.</span>
               </p>
             </div>
 
@@ -106,8 +107,8 @@ export function LandingPage() {
         >
           <div className="mx-auto max-w-md space-y-6 text-center">
             <div className="space-y-2">
-              <h2 className="font-heading text-lg font-semibold text-white">Request early access</h2>
-              <p className="text-sm text-slate-500">Waitlist updates only. Unsubscribe anytime.</p>
+              <h2 className="font-heading text-lg font-semibold text-white">Become a demo user</h2>
+              <p className="text-sm text-slate-500">Answer 3 quick questions and verify your email to start scanning.</p>
             </div>
             <DemoRequestForm showFormHeader={false} surface="deep" />
           </div>

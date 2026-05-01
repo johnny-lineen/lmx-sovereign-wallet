@@ -102,6 +102,20 @@ enum PublicAuditConfidenceBand {
   low
 }
 
+enum DemoFootprintGoal {
+  privacy
+  security
+  accounts
+  data_exposure
+  just_curious
+}
+
+enum DemoAccountCountEstimate {
+  range_0_25
+  range_25_75
+  range_75_plus
+}
+
 /// High-signal email class inferred by deterministic rules (not AI).
 enum ImportCandidateSignal {
   welcome_account
@@ -390,4 +404,21 @@ model PublicAuditCandidate {
 
   @@index([userId, status])
   @@index([auditRunId])
+}
+
+/// Anonymous/early-access intake from landing page before full product activation.
+model DemoWaitlistEntry {
+  id                   String                   @id @default(uuid())
+  email                String
+  digitalFootprintGoal DemoFootprintGoal
+  accountCountEstimate DemoAccountCountEstimate
+  usefulnessNotes      String?                  @db.Text
+  source               String                   @default("landing_modal")
+  clerkUserId          String?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  @@unique([email, source])
+  @@index([email])
+  @@index([clerkUserId])
 }

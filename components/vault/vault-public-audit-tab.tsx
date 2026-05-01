@@ -74,6 +74,28 @@ function formatStatus(s: string) {
   return s.replaceAll("_", " ");
 }
 
+function auditRunIsScanning(status: string) {
+  return status === "queued" || status === "running";
+}
+
+function auditPhaseLabel(status: string, submitting: boolean): string {
+  if (submitting) return "Starting audit…";
+  switch (status) {
+    case "queued":
+      return "Queued — preparing scan";
+    case "running":
+      return "Scanning public sources…";
+    case "awaiting_review":
+      return "Ready for your review";
+    case "completed":
+      return "Complete";
+    case "failed":
+      return "Run failed";
+    default:
+      return formatStatus(status);
+  }
+}
+
 function sourceChipTone(name: string) {
   const key = name.toLowerCase();
   if (key.includes("github")) return "border-cyan-400/50 text-cyan-200";
@@ -180,6 +202,7 @@ export function VaultPublicAuditTab({ highlightRunId }: { highlightRunId: string
   const [selectedAuditIds, setSelectedAuditIds] = useState<Set<string>>(() => new Set());
   const [reviewLoading, setReviewLoading] = useState(false);
   const [resolvedEmailVaultId, setResolvedEmailVaultId] = useState<string | null>(null);
+  const [intelScanBarPct, setIntelScanBarPct] = useState(0);
 
   const loadRuns = useCallback(async () => {
     setRunsError(null);
@@ -320,6 +343,7 @@ export function VaultPublicAuditTab({ highlightRunId }: { highlightRunId: string
       return;
     }
     setSubmitting(true);
+    setIntelScanBarPct(5);
     try {
       const res = await fetch("/api/public-audit/runs", {
         method: "POST",
@@ -450,6 +474,30 @@ export function VaultPublicAuditTab({ highlightRunId }: { highlightRunId: string
     }
     return STAGES.length;
   }, [activeRun]);
+
+  useEffect(() => {
+    if (submitting) {
+      const id = window.setInterval(() => {
+        setIntelScanBarPct((p) => Math.min(34, p + 1.35));
+      }, 125);
+      return () => window.clearInterval(id);
+    }
+    if (!activeRun) return;
+    const st = activeRun.status;
+    if (auditRunIsScanning(st)) {
+      const id = window.setInterval(() => {
+        setIntelScanBarPct((p) => {
+          const cap = st === "queued" ? 78 : 91;
+          const floor = st === "queued" ? 24 : 38;
+          if (p >= cap) return p;
+          const next = p < floor ? floor : p + Math.max(0.22, (cap - p) * 0.055);
+          return Math.min(cap, next);
+        });
+      }, 230);
+      return () => window.clearInterval(id);
+    }
+    setIntelScanBarPct(100);
+  }, [submitting, activeRun?.status, activeRun?.id]);
 
   return (
     <div className="space-y-6">
@@ -673,12 +721,42 @@ export function VaultPublicAuditTab({ highlightRunId }: { highlightRunId: string
           <CardContent className="space-y-4">
             {detailError ? <p className="text-sm text-destructive">{detailError}</p> : null}
             {activeRun ? (
-              <div className="rounded-xl border border-cyan-400/45 bg-slate-900/85 px-4 py-3">
+              <div className="space-y-3 rounded-xl border border-cyan-400/45 bg-slate-900/85 px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-3 text-xs uppercase tracking-wide text-cyan-100/80">
-                  <span>Intel hits: <strong className="text-cyan-50">{activeRun.importedCount}</strong></span>
-                  <span>Review needed: <strong className="text-cyan-50">{activeRun.reviewCount}</strong></span>
-                  <span>Total signals: <strong className="text-cyan-50">{activeRun.totalCandidates}</strong></span>
-                  <span className="text-cyan-300">{activeRun.status === "running" ? "scanning…" : formatStatus(activeRun.status)}</span>
+                  <span>
+                    Intel hits: <strong className="text-cyan-50">{activeRun.importedCount}</strong>
+                  </span>
+                  <span>
+                    Review needed: <strong className="text-cyan-50">{activeRun.reviewCount}</strong>
+                  </span>
+                  <span>
+                    Total signals: <strong className="text-cyan-50">{activeRun.totalCandidates}</strong>
+                  </span>
+                  <span className="max-w-[min(100%,220px)] text-right normal-case tracking-normal text-cyan-300">
+                    {auditPhaseLabel(activeRun.status, submitting)}
+                  </span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-cyan-950/90">
+                  <div
+                    className={cn(
+                      "h-full rounded-full bg-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.35)]",
+                      "transition-[width] duration-[850ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+                      submitting || auditRunIsScanning(activeRun.status) ? "motion-safe:animate-pulse" : "",
+                    )}
+                    style={{ width: `${Math.round(intelScanBarPct)}%` }}
+                  />
+                </div>
+                <div className="flex flex-wrap justify-between gap-2 text-[11px] text-cyan-100/70">
+                  <span className="font-mono text-cyan-200/80">run {activeRun.id.slice(0, 8)}</span>
+                  <span>
+                    {submitting || (auditRunIsScanning(activeRun.status) && (detailCandidates?.length ?? 0) === 0) ? (
+                      <span className="text-cyan-200/75">Discovering candidate rows…</span>
+                    ) : (
+                      <span>
+                        {detailCandidates?.length ?? 0} row(s) loaded · {activeRun.reviewCount} pending review
+                      </span>
+                    )}
+                  </span>
                 </div>
               </div>
             ) : null}

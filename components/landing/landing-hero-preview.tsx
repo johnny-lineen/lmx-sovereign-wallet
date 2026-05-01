@@ -31,23 +31,24 @@ export function LandingHeroPreview({ className }: { className?: string }) {
         </div>
         <div className="min-w-0 flex-1 space-y-1">
           <span className="inline-block rounded border border-cyan-500/25 bg-cyan-500/10 px-2 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wider text-cyan-300/90">
-            Scan snapshot
+            Run snapshot
           </span>
           <h3 className="truncate font-heading text-xl font-semibold tracking-tight text-white">Alex Morgan</h3>
           <p className="font-mono text-sm text-slate-400">verified identity seed</p>
         </div>
       </div>
       <p className="mt-5 text-sm leading-relaxed text-slate-400">
-        Public sources and approved adapters mapped into one review-ready run.
+        One run gives you a structured snapshot: accounts, breaches, emails, domains, and signals before you promote
+        confirmed findings into your vault graph.
       </p>
       <div className="mt-5 grid grid-cols-2 gap-4 border-t border-white/[0.06] pt-5">
         <div>
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-wider text-slate-500">Signals</p>
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-wider text-slate-500">Accounts + signals</p>
           <p className="mt-1 font-mono text-lg font-semibold tabular-nums text-white">24</p>
         </div>
         <div>
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-wider text-slate-500">Confidence</p>
-          <p className="mt-1 font-mono text-lg font-semibold tabular-nums text-white">High</p>
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-wider text-slate-500">Open insights</p>
+          <p className="mt-1 font-mono text-lg font-semibold tabular-nums text-white">6</p>
         </div>
       </div>
       <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-5">
@@ -62,7 +63,7 @@ export function LandingHeroPreview({ className }: { className?: string }) {
             <Linkedin className="size-3.5" aria-hidden />
           </SocialBubble>
         </div>
-        <span className="text-xs text-slate-500">pipeline linked to vault review</span>
+        <span className="text-xs text-slate-500">ready to review, link, and prioritize</span>
       </div>
     </div>
   );

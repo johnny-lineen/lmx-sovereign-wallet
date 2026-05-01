@@ -10,7 +10,7 @@ const DEMO_RESULTS = [
   { platform: "X", title: "John Doe", handle: "@johndoe", detail: "thoughts on tech and coffee", meta: "3.2K followers" },
   { platform: "Reddit", title: "u/johndoe", handle: "u/johndoe", detail: "12.4K karma", meta: "4y account age" },
 ] as const;
-const DEMO_STEPS = ["running connectors", "matching identities", "building preview report"] as const;
+const DEMO_STEPS = ["running adapters", "bucketing pipelines", "staging graph-ready hits"] as const;
 
 export function LandingAgent() {
   const [isActivated, setIsActivated] = useState(false);
@@ -115,7 +115,8 @@ export function LandingAgent() {
                 </h2>
               </div>
               <p className="text-pretty text-sm leading-relaxed text-slate-400">
-                Live preview: run a scan, watch ingestion progress, then inspect account matches.
+                Stylized preview of a footprint run: adapters fan out, pipeline buckets fill in, then you promote the
+                strongest account hits into the vault and graph.
               </p>
             </div>
           </header>

@@ -1,20 +1,10 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { z } from "zod";
 
-import { logInfo } from "@/lib/observability";
-import { profileEmailSchema } from "@/lib/validations/import";
-
-const bodySchema = z.object({
-  email: profileEmailSchema.max(320),
-});
+import { buildDemoSignUpUrl } from "@/lib/demo-request";
+import { demoRequestBodySchema } from "@/lib/validations/demo-request";
+import { submitDemoRequest } from "@/server/services/demo-request.service";
 
 export async function POST(request: Request) {
-  const { userId } = await auth();
-  if (!userId) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
   let json: unknown;
   try {
     json = await request.json();
@@ -22,32 +12,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
-  const parsed = bodySchema.safeParse(json);
+  const parsed = demoRequestBodySchema.safeParse(json);
   if (!parsed.success) {
-    const message = parsed.error.issues[0]?.message ?? "Invalid email";
+    const message = parsed.error.issues[0]?.message ?? "Invalid request payload";
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
 
-  const { email } = parsed.data;
-  const webhook = process.env.DEMO_REQUEST_WEBHOOK_URL?.trim();
-  if (webhook) {
-    try {
-      await fetch(webhook, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          event: "demo_request",
-          ts: new Date().toISOString(),
-          email,
-        }),
-      });
-    } catch {
-      // Still acknowledge to the user; log for follow-up.
-      logInfo("demo_request_webhook_failed", { email });
-    }
-  } else {
-    logInfo("demo_request", { email });
-  }
-
-  return NextResponse.json({ ok: true });
+  const saved = await submitDemoRequest(parsed.data);
+  return NextResponse.json({ ok: true, signUpUrl: buildDemoSignUpUrl(saved) });
 }

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Check, GitBranch, Radio, Shield, Sparkles, X } from "lucide-react";
+import { Check, GitBranch, Lightbulb, Network, Radio, Shield, Sparkles, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -65,9 +65,9 @@ export function LandingMarketingSections() {
         <div className="grid gap-14 lg:grid-cols-2 lg:items-center lg:gap-16">
           <SectionTitle
             align="left"
-            eyebrow="Live pipeline"
-            title="Watch run progress update live."
-            subtitle="Adapters run in parallel and stream updates to the run timeline. You see hits, misses, and stage status as processing completes."
+            eyebrow="Ingestion pipelines"
+            title="Stop guessing where your exposure lives."
+            subtitle="LMX runs adapters in parallel and sorts results into clear buckets: Accounts, Breaches, Emails, Domains, Signals, and Other. You see exactly what was found, skipped, or failed by source."
           />
           <div
             className="overflow-hidden rounded-2xl border border-white/[0.1] bg-[#0c1018] shadow-[0_0_48px_-20px_rgba(34,211,238,0.2)]"
@@ -76,7 +76,7 @@ export function LandingMarketingSections() {
             <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
               <div className="flex items-center gap-2">
                 <Radio className="size-4 text-cyan-400" />
-                <span className="font-mono text-xs text-slate-400">Footprint scan</span>
+                <span className="font-mono text-xs text-slate-400">Public audit run</span>
               </div>
               <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-emerald-400">
                 Live
@@ -88,10 +88,31 @@ export function LandingMarketingSections() {
             </div>
             <ul className="divide-y divide-white/[0.05] p-2">
               {[
-                { name: "Public account surfaces", state: "done", detail: "12 candidates · 3 low confidence" },
-                { name: "Breach source check", state: "done", detail: "No new critical exposures" },
-                { name: "Public search signals", state: "run", detail: "Resolving web candidates…" },
-                { name: "Vault linking & review", state: "wait", detail: "Queued after signal enrichment" },
+                {
+                  name: "Accounts",
+                  state: "done",
+                  detail: "Username surfaces, public profiles, people/social, name-inference hits",
+                },
+                {
+                  name: "Breaches",
+                  state: "done",
+                  detail: "HIBP-backed exposure index when configured · otherwise skipped with reason",
+                },
+                {
+                  name: "Emails",
+                  state: "run",
+                  detail: "Optional Gmail OAuth plus email-intel enrichment",
+                },
+                {
+                  name: "Domains",
+                  state: "wait",
+                  detail: "Seeds from email domains and explicit website inputs",
+                },
+                {
+                  name: "Signals",
+                  state: "wait",
+                  detail: "SERP-style search, broker presence, location-aware queries",
+                },
               ].map((row) => (
                 <li key={row.name} className="flex items-start gap-3 rounded-lg px-2 py-3 sm:px-3">
                   <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03]">
@@ -163,8 +184,8 @@ export function LandingMarketingSections() {
             <SectionTitle
               align="left"
               eyebrow="Deep scan"
-              title="One scan becomes many signals."
-              subtitle="When a run surfaces a new email, username, or strong alias, follow-on adapters run automatically. You get expanded coverage without restarting from scratch."
+              title="One verified signal expands the full map."
+              subtitle="When a run discovers a new email, handle, or domain, downstream adapters continue automatically. Coverage grows without manual restarts or disconnected searches."
             />
           </div>
         </div>
@@ -173,14 +194,50 @@ export function LandingMarketingSections() {
       <SectionShell className="bg-[#080a0f]">
         <SectionTitle
           eyebrow="Coverage"
-          title="Adapters across your footprint."
-          subtitle="Account surfaces, breach checks, public search enrichment, optional inbox context, and graph-linked review—designed to compound instead of returning a flat URL list."
+          title="Real source coverage, organized for action."
+          subtitle="Each bucket is backed by maintained adapters across breach checks, inbox intel, public search, profile discovery, and domain signals so results stay consistent between UI and API."
         />
         <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard value="6+" label="Core adapters" sub="Username, breach, SERP, inbox, identity match, name hints." />
-          <StatCard value="Live" label="Progressive results" sub="See stages complete as the run advances." />
-          <StatCard value="1" label="Vault graph" sub="Tie findings back to entities you control." />
-          <StatCard value="100%" label="Authorized sources" sub="Public data and APIs you opt into—not dark-web dumps." />
+          <StatCard
+            value="6"
+            label="Pipeline groups"
+            sub="A simple structure for complex footprint data."
+          />
+          <StatCard value="Live" label="Run timeline" sub="Track provider status and coverage while scans execute." />
+          <StatCard value="2D" label="Vault graph" sub="See how identities, accounts, and services connect." />
+          <StatCard value="Auto" label="Insights" sub="Prioritized risks and recommended next actions." />
+        </div>
+      </SectionShell>
+
+      <SectionShell className="bg-[#080a0f]">
+        <div className="grid gap-14 lg:grid-cols-2 lg:items-center lg:gap-16">
+          <SectionTitle
+            align="left"
+            eyebrow="Graph & insights"
+            title="Turn scattered findings into a decision-ready graph."
+            subtitle="Accept findings into your vault, view identity links in an interactive graph, and get insights that rank what matters most so you can harden quickly."
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6 sm:p-7">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400">
+                <Network className="size-5" aria-hidden />
+              </div>
+              <h3 className="mt-5 font-heading text-lg font-semibold text-white">Identity graph</h3>
+              <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                Explore how emails, accounts, devices, and custom items connect so weak points and dependencies are easy
+                to spot.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6 sm:p-7">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
+                <Lightbulb className="size-5" aria-hidden />
+              </div>
+              <h3 className="mt-5 font-heading text-lg font-semibold text-white">Insight engine</h3>
+              <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                Insight cards highlight blast radius, concentration risk, and clear remediation steps.
+              </p>
+            </div>
+          </div>
         </div>
       </SectionShell>
 
@@ -192,8 +249,8 @@ export function LandingMarketingSections() {
             </div>
             <h3 className="mt-6 font-heading text-xl font-semibold text-white">Public &amp; authorized sources</h3>
             <p className="mt-3 text-pretty leading-relaxed text-slate-400">
-              We work from profile pages, reputable APIs, breach disclosure indexes where appropriate, and your own
-              connected inbox—never scraped password markets or &quot;combo lists&quot; sold as OSINT.
+              We use profile pages, reputable APIs, breach disclosure indexes when configured, and your connected inbox.
+              We do not rely on scraped credential dumps sold as OSINT.
             </p>
           </div>
           <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-8 sm:p-10">
@@ -202,8 +259,8 @@ export function LandingMarketingSections() {
             </div>
             <h3 className="mt-6 font-heading text-xl font-semibold text-white">Your scan. Your vault.</h3>
             <p className="mt-3 text-pretty leading-relaxed text-slate-400">
-              Results stay tied to your account for review and export policies you set. We do not resell search history
-              or footprint graphs to data brokers.
+              Your results stay in your account under your review and export controls. We do not resell your scan history
+              or identity graph to data brokers.
             </p>
           </div>
         </div>
@@ -212,8 +269,8 @@ export function LandingMarketingSections() {
       <SectionShell id="compare" className="bg-[#080a0f]">
         <SectionTitle
           eyebrow="Why LMX"
-          title="Better signal than guess-and-check scanners."
-          subtitle="Many tools only confirm that a URL loads. LMX is built to surface structured context, confidence, and next hops you can act on inside your sovereign wallet."
+          title="Built for decisions, not just detection."
+          subtitle="Most free scanners return disconnected hits. LMX gives structured context, relationship mapping, and next actions in one workspace."
         />
         <div className="mt-14 overflow-x-auto rounded-2xl border border-white/[0.08] bg-[#0a0d14]">
           <table className="w-full min-w-[36rem] border-collapse text-left text-sm">
@@ -232,6 +289,8 @@ export function LandingMarketingSections() {
                 ["First-party maintained adapters", "yes", "no"],
                 ["Deep cascade on new identifiers", "yes", "rare"],
                 ["Account vault + graph linkage", "full", "none"],
+                ["Interactive vault graph (2D)", "full", "none"],
+                ["Server-generated insights & actions", "yes", "no"],
                 ["Live per-stage progress", "yes", "no"],
               ].map(([cap, lmx, other]) => (
                 <tr key={cap} className="border-b border-white/[0.05] last:border-0">
@@ -253,14 +312,14 @@ export function LandingMarketingSections() {
         <SectionTitle
           eyebrow="Plans"
           title="Simple access. No surprise fees in beta."
-          subtitle="We are in early access: start with the footprint scan and vault, then scale as we ship team controls and billing."
+          subtitle="Start with the core scan and vault in early access, then scale as team controls and billing roll out."
         />
         <div className="mt-14 grid gap-6 lg:grid-cols-3">
           {[
             {
               name: "Early access",
               price: "Free during beta",
-              blurb: "Footprint scan, review queue, and core vault graph for individuals on the waitlist.",
+              blurb: "Footprint scan, grouped results, vault graph, and dashboard insights for individuals on the waitlist.",
               cta: "Join waitlist",
               href: "#waitlist",
               highlight: false,
@@ -268,7 +327,7 @@ export function LandingMarketingSections() {
             {
               name: "Pro",
               price: "Coming soon",
-              blurb: "Higher scan limits, priority runs, and advanced export controls when billing goes live.",
+              blurb: "Higher scan limits, priority runs, and advanced export controls.",
               cta: "Scan now",
               href: "/sign-up",
               highlight: true,
@@ -276,7 +335,7 @@ export function LandingMarketingSections() {
             {
               name: "Team",
               price: "Contact us",
-              blurb: "Shared vault policies, audit trails, and org-wide footprint programs.",
+              blurb: "Shared vault policies, audit trails, and org-level footprint programs.",
               cta: "Get updates",
               href: "#waitlist",
               highlight: false,
@@ -316,7 +375,7 @@ export function LandingMarketingSections() {
       <SectionShell className="border-white/[0.06] bg-gradient-to-b from-[#080a0f] to-[#05070a]">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="font-heading text-3xl font-semibold tracking-tight text-white sm:text-4xl">Start scanning.</h2>
-          <p className="mt-4 text-lg text-slate-400">Create an account or join the waitlist—we will meet you there.</p>
+          <p className="mt-4 text-lg text-slate-400">Create an account or join the waitlist to map and secure your footprint.</p>
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link href="/sign-up" className={ctaGradient}>
               Scan now

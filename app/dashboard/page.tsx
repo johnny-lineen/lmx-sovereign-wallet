@@ -36,11 +36,11 @@ export default async function DashboardPage() {
         description="Understand your footprint fast: ingest, view your graph, and prioritize actions."
       />
 
-      <Card className="border-white/[0.1] bg-white/[0.02]">
+      <Card className="border-white/[0.08] bg-gradient-to-b from-white/[0.06] to-white/[0.02] shadow-[0_0_60px_-12px_rgba(34,211,238,0.12)] backdrop-blur-sm">
         <CardContent className="space-y-4 p-4 sm:p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-1">
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-cyan-400/85">Identity owner</p>
+              <p className="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-cyan-400/95">Identity owner</p>
               <p className="text-xl font-semibold text-white">
                 {identity?.displayName ?? "Vault owner"}
               </p>
@@ -49,13 +49,13 @@ export default async function DashboardPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full border border-white/[0.12] bg-white/[0.03] px-3 py-1.5 font-medium text-slate-300">
+              <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 font-medium text-slate-300">
                 Vault items {vaultItemCount}
               </span>
-              <span className="rounded-full border border-white/[0.12] bg-white/[0.03] px-3 py-1.5 font-medium text-slate-300">
+              <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 font-medium text-slate-300">
                 Active insights {activeInsights}
               </span>
-              <span className="rounded-full border border-white/[0.12] bg-white/[0.03] px-3 py-1.5 font-medium text-slate-300">
+              <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 font-medium text-slate-300">
                 Providers {graphOverview?.distinctProviders ?? 0}
               </span>
             </div>
@@ -67,13 +67,13 @@ export default async function DashboardPage() {
         <div className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             {identity ? <IdentitySummaryCard identity={identity} /> : <IdentitySummaryEmpty />}
-            <Card className="overflow-hidden">
+            <Card className="overflow-hidden border-white/[0.08] bg-gradient-to-b from-white/[0.06] to-white/[0.02] shadow-[0_0_60px_-12px_rgba(34,211,238,0.12)] backdrop-blur-sm">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base text-white">Graph preview</CardTitle>
                 <p className="text-sm text-slate-400">Quick snapshot of linked entities discovered in your vault.</p>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="relative h-28 rounded-xl border border-white/[0.12] bg-[#0c1119]">
+                <div className="relative h-28 rounded-xl border border-white/[0.08] bg-[#05070a]/90">
                   <span className="absolute left-1/2 top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-400 shadow-md shadow-cyan-400/20" />
                   <span className="absolute left-[28%] top-[34%] size-2.5 rounded-full bg-violet-500/90" />
                   <span className="absolute right-[27%] top-[30%] size-2.5 rounded-full bg-violet-500/90" />
@@ -97,8 +97,8 @@ export default async function DashboardPage() {
 
           <div className="space-y-2">
             <div>
-              <h2 className="text-base font-semibold">Actionable insights</h2>
-              <p className="text-sm text-muted-foreground">
+              <h2 className="text-base font-semibold text-white">Actionable insights</h2>
+              <p className="text-sm text-slate-400">
                 Prioritized findings from your graph, ready for remediation.
               </p>
             </div>
@@ -116,8 +116,8 @@ export default async function DashboardPage() {
 
         <div className="space-y-4">
           <div>
-            <h2 className="text-base font-semibold">Recommended next actions</h2>
-            <p className="text-sm text-muted-foreground">Execute focused actions to reduce risk quickly.</p>
+            <h2 className="text-base font-semibold text-white">Recommended next actions</h2>
+            <p className="text-sm text-slate-400">Execute focused actions to reduce risk quickly.</p>
           </div>
           <ActionCenter />
         </div>
