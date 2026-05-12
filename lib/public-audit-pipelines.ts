@@ -1,9 +1,11 @@
 /** Stable pipeline ids for grouping public audit candidates in API + UI. */
 export const PUBLIC_AUDIT_PIPELINE_ORDER = [
   "accounts",
+  "subscriptions",
   "breaches",
   "emails",
   "domains",
+  "public_records",
   "signals",
   "other",
 ] as const;
@@ -16,16 +18,21 @@ const ACCOUNT_SOURCE_TYPES = new Set([
   "username_check_adapter",
   "name_inference_adapter",
   "people_social_adapter",
+  "maigret_adapter",
 ]);
+const SUBSCRIPTION_SOURCE_TYPES = new Set(["holehe_adapter", "user_scanner_adapter", "gmail_subscription_adapter"]);
 const EMAIL_SOURCE_TYPES = new Set(["gmail_inbox_adapter", "email_intel_adapter"]);
 const DOMAIN_SOURCE_TYPES = new Set(["input_email_domain_adapter", "input_website_adapter"]);
+const PUBLIC_RECORD_SOURCE_TYPES = new Set(["open_sanctions_adapter"]);
 const SIGNAL_SOURCE_TYPES = new Set(["public_search_adapter", "broker_presence_adapter", "input_location_search_adapter"]);
 
 export function pipelineIdFromSourceType(sourceType: string): PublicAuditPipelineId {
   if (sourceType === "breach_adapter") return "breaches";
   if (ACCOUNT_SOURCE_TYPES.has(sourceType)) return "accounts";
+  if (SUBSCRIPTION_SOURCE_TYPES.has(sourceType)) return "subscriptions";
   if (EMAIL_SOURCE_TYPES.has(sourceType)) return "emails";
   if (DOMAIN_SOURCE_TYPES.has(sourceType)) return "domains";
+  if (PUBLIC_RECORD_SOURCE_TYPES.has(sourceType)) return "public_records";
   if (SIGNAL_SOURCE_TYPES.has(sourceType) || sourceType.startsWith("input_")) return "signals";
   return "other";
 }
@@ -36,10 +43,14 @@ export function pipelineLabel(id: PublicAuditPipelineId): string {
       return "Accounts";
     case "breaches":
       return "Breaches";
+    case "subscriptions":
+      return "Subscriptions";
     case "emails":
       return "Emails";
     case "domains":
       return "Domains";
+    case "public_records":
+      return "Public Records";
     case "signals":
       return "Signals";
     default:
@@ -64,9 +75,11 @@ type CandidateLike = { sourceType: string };
 export function countCandidatesByPipeline(candidates: CandidateLike[]): Record<PublicAuditPipelineId, number> {
   const counts: Record<PublicAuditPipelineId, number> = {
     accounts: 0,
+    subscriptions: 0,
     breaches: 0,
     emails: 0,
     domains: 0,
+    public_records: 0,
     signals: 0,
     other: 0,
   };
@@ -83,8 +96,13 @@ const PROVIDER_ERROR_TO_PIPELINE: Record<string, PublicAuditPipelineId> = {
   gmail: "emails",
   username_surface: "accounts",
   username_check: "accounts",
+  maigret: "accounts",
+  holehe: "subscriptions",
+  user_scanner: "subscriptions",
   people_social: "accounts",
   email_intel: "emails",
+  urlscan: "signals",
+  open_sanctions: "public_records",
   name_inference: "accounts",
 };
 

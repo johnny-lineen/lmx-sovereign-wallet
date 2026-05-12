@@ -5,6 +5,12 @@ const SOURCE_MEDIUM_CAPS: Record<string, number> = {
   broker_presence_adapter: 10,
   public_search_adapter: 12,
   gmail_inbox_adapter: 20,
+  gmail_subscription_adapter: 20,
+  maigret_adapter: 18,
+  holehe_adapter: 12,
+  user_scanner_adapter: 12,
+  open_sanctions_adapter: 8,
+  urlscan_adapter: 10,
 };
 
 function identityScoreFromRawData(rawData: RawPublicAuditCandidate["rawData"]): number {

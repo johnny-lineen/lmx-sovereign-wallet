@@ -3,8 +3,12 @@
 import { UserButton, useUser } from "@clerk/nextjs";
 import { Layers, Search } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { recordFunnelFeedback } from "@/lib/feedback-client";
+import { SESSION_PENDING_GMAIL_EMAIL } from "@/lib/gmail-import-session";
+import { MAX_REVIEW_CANDIDATE_IDS, profileEmailSchema } from "@/lib/validations/import";
 import { cn } from "@/lib/utils";
 
 const landingCta = cn(
@@ -12,13 +16,6 @@ const landingCta = cn(
   "bg-gradient-to-br from-cyan-400 via-cyan-500 to-teal-600",
   "shadow-[0_0_32px_-4px_rgba(34,211,238,0.45)] hover:shadow-[0_0_40px_-2px_rgba(34,211,238,0.55)] motion-safe:hover:scale-[1.02]",
 );
-import { MAX_PUBLIC_AUDIT_REVIEW_IDS } from "@/lib/validations/public-audit";
-
-const queryModes = [
-  { key: "username", label: "Username", placeholder: "Enter username..." },
-  { key: "email", label: "Email", placeholder: "Enter email..." },
-  { key: "domain", label: "Domain", placeholder: "Enter domain..." },
-] as const;
 
 const appLinks = [
   { href: "/dashboard", label: "Dashboard" },
@@ -27,7 +24,6 @@ const appLinks = [
   { href: "/insights", label: "Insights" },
 ] as const;
 
-type QueryModeKey = (typeof queryModes)[number]["key"];
 type SearchCandidate = {
   id: string;
   title: string;
@@ -38,6 +34,7 @@ type SearchCandidate = {
   confidenceScore: number;
   snippet?: string | null;
 };
+
 type SearchReport = {
   runId?: string;
   id?: string;
@@ -45,27 +42,135 @@ type SearchReport = {
   totalCandidates: number;
   importedCount: number;
   reviewCount: number;
+  metadata?: {
+    exposureNarrative?: {
+      headline?: string;
+      highlights?: string[];
+      riskBadges?: string[];
+    } | null;
+  } | null;
 };
-type PipelineSection = { id: string; label: string; candidates: SearchCandidate[] };
-type RunDetail = {
-  run: SearchReport;
-  candidates: SearchCandidate[];
-  pipelines: PipelineSection[];
-};
-const POLL_INTERVAL_MS = 2200;
 
-function isRunActivelyScanning(status: string | undefined): boolean {
-  return status === "queued" || status === "running";
+type PipelineSection = { id: string; label: string; candidates: SearchCandidate[] };
+
+type UnifiedImportMember = {
+  id: string;
+  importJobId: string;
+  status: string;
+  signal: string;
+  suggestedType: string;
+  title: string;
+  provider: string | null;
+  providerDomain: string | null;
+  evidence: unknown;
+  dedupeKey: string;
+  createdVaultItemId: string | null;
+  createdAt: string;
+  sourceEmail: string | null;
+};
+
+type UnifiedImportCandidateGroup = {
+  unificationKey: string;
+  suggestedType: string;
+  title: string;
+  provider: string | null;
+  sourceEmails: string[];
+  members: UnifiedImportMember[];
+};
+
+type ImportScanMeta = {
+  jobId: string;
+  detected: number;
+  inserted: number;
+  messagesScanned: number;
+};
+
+function evidenceSnippet(ev: unknown): string | null {
+  if (!ev || typeof ev !== "object") return null;
+  const o = ev as Record<string, unknown>;
+  const parts: string[] = [];
+  if (typeof o.subject === "string" && o.subject.trim()) parts.push(o.subject.trim());
+  const rawDomains = o.rawSenderDomains;
+  const sender =
+    typeof o.sender === "string"
+      ? o.sender
+      : Array.isArray(rawDomains) && typeof rawDomains[0] === "string"
+        ? rawDomains[0]
+        : null;
+  if (sender?.trim()) parts.push(sender.trim());
+  return parts.length ? parts.join(" · ") : null;
+}
+
+function confidenceFromImportSignal(signal: string): { band: string; score: number } {
+  const s = signal.toLowerCase();
+  if (s.includes("strong") || s.includes("high")) return { band: "high", score: 0.82 };
+  if (s.includes("weak") || s.includes("low")) return { band: "low", score: 0.48 };
+  return { band: "medium", score: 0.72 };
+}
+
+function pipelineBucketForSuggestedType(suggestedType: string): { id: string; label: string } {
+  if (suggestedType === "subscription") return { id: "subscriptions", label: "Subscriptions" };
+  if (suggestedType === "account") return { id: "accounts", label: "Accounts" };
+  return { id: "other", label: "Other" };
+}
+
+function mapUnifiedImportToView(
+  unified: UnifiedImportCandidateGroup[],
+  jobId: string,
+  stats: Pick<ImportScanMeta, "detected" | "inserted">,
+): { results: SearchCandidate[]; pipelines: PipelineSection[]; report: SearchReport } {
+  const results: SearchCandidate[] = [];
+  const byPipeline = new Map<string, { label: string; list: SearchCandidate[] }>();
+
+  for (const g of unified) {
+    for (const m of g.members) {
+      const { band, score } = confidenceFromImportSignal(m.signal);
+      const sourceName = m.provider?.trim() || m.providerDomain?.trim() || "Gmail inbox";
+      const c: SearchCandidate = {
+        id: m.id,
+        title: g.title || m.title,
+        proposedVaultType: m.suggestedType,
+        status: m.status,
+        sourceName,
+        confidenceBand: band,
+        confidenceScore: score,
+        snippet: evidenceSnippet(m.evidence),
+      };
+      results.push(c);
+      const pl = pipelineBucketForSuggestedType(m.suggestedType);
+      const prev = byPipeline.get(pl.id);
+      if (prev) prev.list.push(c);
+      else byPipeline.set(pl.id, { label: pl.label, list: [c] });
+    }
+  }
+
+  const order = ["accounts", "subscriptions", "other"];
+  const pipelines: PipelineSection[] = [];
+  for (const id of order) {
+    const bucket = byPipeline.get(id);
+    if (bucket?.list.length) {
+      pipelines.push({ id, label: bucket.label, candidates: bucket.list });
+    }
+  }
+
+  const reviewCount = results.filter((r) => r.status === "pending").length;
+  const report: SearchReport = {
+    runId: jobId,
+    id: jobId,
+    status: reviewCount > 0 ? "awaiting_review" : "completed",
+    totalCandidates: stats.detected,
+    importedCount: 0,
+    reviewCount,
+    metadata: null,
+  };
+
+  return { results, pipelines, report };
 }
 
 function scanPhaseLabel(searchLoading: boolean, report: SearchReport | null): string {
-  if (searchLoading) return "Starting scan…";
+  if (searchLoading) return "Scanning inbox…";
   if (!report) return "";
   switch (report.status) {
-    case "queued":
-      return "Queued — preparing connectors";
-    case "running":
-      return "Scanning public sources & ingestion";
     case "awaiting_review":
       return "Scan complete — awaiting your review";
     case "completed":
@@ -79,126 +184,71 @@ function scanPhaseLabel(searchLoading: boolean, report: SearchReport | null): st
 
 export function OpsisSearchHome() {
   const { user } = useUser();
-  const [queryMode, setQueryMode] = useState<QueryModeKey>("username");
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [query, setQuery] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [report, setReport] = useState<SearchReport | null>(null);
   const [pipelines, setPipelines] = useState<PipelineSection[]>([]);
   const [results, setResults] = useState<SearchCandidate[]>([]);
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [importScanMeta, setImportScanMeta] = useState<ImportScanMeta | null>(null);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(() => new Set());
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewBanner, setReviewBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [resolvedEmailVaultItemId, setResolvedEmailVaultItemId] = useState<string | null>(null);
   const [showViewInVault, setShowViewInVault] = useState(false);
   const [scanBarPct, setScanBarPct] = useState(0);
+  const [showNeedsGmailConnect, setShowNeedsGmailConnect] = useState(false);
+  const [gmailOAuthBanner, setGmailOAuthBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [connectLoading, setConnectLoading] = useState(false);
+  const [scanNotice, setScanNotice] = useState<string | null>(null);
+  const abandonFiredJobIdRef = useRef<string | null>(null);
 
-  const placeholder = useMemo(
-    () => queryModes.find((mode) => mode.key === queryMode)?.placeholder ?? "Enter value...",
-    [queryMode],
-  );
-  const pendingResultIds = useMemo(() => results.filter((x) => x.status === "pending").map((x) => x.id), [results]);
-  const pendingSelectedIds = useMemo(
-    () => [...selectedCandidateIds].filter((id) => pendingResultIds.includes(id)),
-    [pendingResultIds, selectedCandidateIds],
-  );
-  const hasPendingResults = pendingResultIds.length > 0;
   const signedInEmail = useMemo(() => {
     return user?.primaryEmailAddress?.emailAddress?.trim().toLowerCase() ?? null;
   }, [user]);
-  const reportRunRef = useMemo(() => {
+
+  const reportJobRef = useMemo(() => {
     if (!report) return null;
     const maybeRunId = typeof report.runId === "string" ? report.runId : null;
     if (maybeRunId) return maybeRunId;
     const maybeId = typeof report.id === "string" ? report.id : null;
     return maybeId;
   }, [report]);
+
+  const pendingResultIds = useMemo(() => results.filter((x) => x.status === "pending").map((x) => x.id), [results]);
+  const pendingSelectedIds = useMemo(
+    () => [...selectedCandidateIds].filter((id) => pendingResultIds.includes(id)),
+    [pendingResultIds, selectedCandidateIds],
+  );
+  const hasPendingResults = pendingResultIds.length > 0;
+
   const showSearchControls = !searchLoading && !report;
-  const runScanning = Boolean(report && isRunActivelyScanning(report.status));
-  const scanUiBusy = searchLoading || runScanning;
+  const scanUiBusy = searchLoading;
   const resultCount = report?.reviewCount ?? pendingResultIds.length;
   const resultsSummaryRight = useMemo(() => {
     if (scanUiBusy && results.length === 0) return { mode: "pending" as const };
     return { mode: "count" as const, value: resultCount };
   }, [scanUiBusy, results.length, resultCount]);
+  const exposureNarrative = report?.metadata?.exposureNarrative ?? null;
 
-  const onReviewCandidates = useCallback(
-    async (action: "accept" | "reject") => {
-      if (pendingSelectedIds.length === 0) return;
-      if (action === "accept" && !resolvedEmailVaultItemId) {
-        setReviewBanner({
-          kind: "err",
-          text: "Email anchor missing. Run search again or reconnect Gmail.",
-        });
-        return;
-      }
-      setReviewLoading(true);
-      setReviewBanner(null);
-      try {
-        const chunks: string[][] = [];
-        for (let i = 0; i < pendingSelectedIds.length; i += MAX_PUBLIC_AUDIT_REVIEW_IDS) {
-          chunks.push(pendingSelectedIds.slice(i, i + MAX_PUBLIC_AUDIT_REVIEW_IDS));
-        }
-        let approved = 0;
-        let duplicates = 0;
-        let rejected = 0;
-        for (const chunk of chunks) {
-          const res = await fetch("/api/public-audit/candidates/review", {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(
-              action === "accept"
-                ? { action: "accept", candidateIds: chunk, emailVaultItemId: resolvedEmailVaultItemId }
-                : { action: "reject", candidateIds: chunk },
-            ),
-          });
-          if (!res.ok) {
-            setReviewBanner({ kind: "err", text: "Candidate review failed. Try again." });
-            return;
-          }
-          const body = (await res.json()) as {
-            importedVaultItemIds?: string[];
-            addedToVaultCount?: number;
-            duplicatesFoundCount?: number;
-            processed?: number;
-          };
-          if (action === "accept") {
-            approved += body.addedToVaultCount ?? body.importedVaultItemIds?.length ?? 0;
-            duplicates += body.duplicatesFoundCount ?? 0;
-          }
-          else rejected += body.processed ?? chunk.length;
-        }
-        if (action === "accept") {
-          setReviewBanner({
-            kind: "ok",
-            text: `Approved ${pendingSelectedIds.length} candidate(s): ${approved} added to vault, ${duplicates} duplicates found.`,
-          });
-          setShowViewInVault(pendingSelectedIds.length > 0);
-        } else {
-          setReviewBanner({ kind: "ok", text: `Disapproved ${rejected} candidate(s).` });
-        }
-        setSelectedCandidateIds(new Set());
-        if (activeRunId) {
-          const detailRes = await fetch(`/api/public-audit/runs/${activeRunId}?candidateStatus=pending`, {
-            credentials: "same-origin",
-          });
-          if (detailRes.ok) {
-            const detail = (await detailRes.json()) as RunDetail;
-            setReport(detail.run);
-            setResults(detail.candidates ?? []);
-            setPipelines(detail.pipelines ?? []);
-          }
-        }
-      } catch {
-        setReviewBanner({ kind: "err", text: "Candidate review failed (network)." });
-      } finally {
-        setReviewLoading(false);
-      }
-    },
-    [activeRunId, pendingSelectedIds, resolvedEmailVaultItemId],
-  );
+  const refreshImportView = useCallback(async (meta: ImportScanMeta) => {
+    /** Omit jobId so rows skipped as user-level dedupes on this run still surface older pending imports. */
+    const params = new URLSearchParams({ unified: "true", status: "pending" });
+    const res = await fetch(`/api/import/candidates?${params.toString()}`, { credentials: "same-origin" });
+    if (!res.ok) return;
+    const data = (await res.json()) as { unified?: UnifiedImportCandidateGroup[] };
+    const unified = data.unified ?? [];
+    const { results: nextResults, pipelines: nextPipelines, report: nextReport } = mapUnifiedImportToView(
+      unified,
+      meta.jobId,
+      { detected: meta.detected, inserted: meta.inserted },
+    );
+    setResults(nextResults);
+    setPipelines(nextPipelines);
+    setReport(nextReport);
+  }, []);
 
   useEffect(() => {
     if (query.trim()) return;
@@ -207,118 +257,303 @@ export function OpsisSearchHome() {
   }, [query, signedInEmail]);
 
   useEffect(() => {
+    const connected = searchParams.get("gmail_connected");
+    const err = searchParams.get("gmail_error");
+    if (connected) {
+      setGmailOAuthBanner({
+        kind: "ok",
+        text: "Gmail connected. Run scan to pull inbox candidates.",
+      });
+      const pending = sessionStorage.getItem(SESSION_PENDING_GMAIL_EMAIL);
+      if (pending) {
+        setQuery(pending);
+        sessionStorage.removeItem(SESSION_PENDING_GMAIL_EMAIL);
+      }
+      router.replace("/search", { scroll: false });
+      return;
+    }
+    if (err) {
+      setGmailOAuthBanner({
+        kind: "err",
+        text: `Gmail connection failed (${err.replaceAll("_", " ")}). Try again or check OAuth configuration.`,
+      });
+      sessionStorage.removeItem(SESSION_PENDING_GMAIL_EMAIL);
+      router.replace("/search", { scroll: false });
+    }
+  }, [searchParams, router]);
+
+  useEffect(() => {
     if (searchLoading) {
       const id = window.setInterval(() => {
-        setScanBarPct((p) => Math.min(34, p + 1.35));
-      }, 125);
+        setScanBarPct((p) => Math.min(88, p + 2.4));
+      }, 120);
       return () => window.clearInterval(id);
     }
     if (!report) return;
-    const st = report.status;
-    if (st === "queued" || st === "running") {
-      const id = window.setInterval(() => {
-        setScanBarPct((p) => {
-          const cap = st === "queued" ? 78 : 91;
-          const floor = st === "queued" ? 24 : 38;
-          if (p >= cap) return p;
-          const next = p < floor ? floor : p + Math.max(0.22, (cap - p) * 0.055);
-          return Math.min(cap, next);
-        });
-      }, 230);
-      return () => window.clearInterval(id);
-    }
     setScanBarPct(100);
-  }, [searchLoading, report?.status, activeRunId]);
+  }, [searchLoading, report]);
 
   useEffect(() => {
-    if (!activeRunId) return;
-    const handle = window.setInterval(async () => {
-      const res = await fetch(`/api/public-audit/runs/${activeRunId}?candidateStatus=pending`, {
-        credentials: "same-origin",
+    const onVis = () => {
+      if (document.visibilityState !== "hidden") return;
+      const jobId = reportJobRef;
+      if (!jobId) return;
+      if (report?.status !== "awaiting_review") return;
+      if (pendingResultIds.length === 0) return;
+      if (selectedCandidateIds.size > 0) return;
+      if (abandonFiredJobIdRef.current === jobId) return;
+      abandonFiredJobIdRef.current = jobId;
+      recordFunnelFeedback({
+        theme: "funnel_dropoff",
+        surface: "search",
+        metadata: {
+          pathname: "/search",
+          funnelStep: "review_tab_hidden_pending",
+          importJobId: jobId,
+        },
       });
-      if (!res.ok) return;
-      const body = (await res.json()) as RunDetail;
-      setReport(body.run);
-      setResults(body.candidates ?? []);
-      setPipelines(body.pipelines ?? []);
-      if (body.run.status !== "queued" && body.run.status !== "running") {
-        window.clearInterval(handle);
-      }
-    }, POLL_INTERVAL_MS);
-    return () => window.clearInterval(handle);
-  }, [activeRunId]);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [report?.status, reportJobRef, pendingResultIds.length, selectedCandidateIds.size]);
 
-  const onSearch = async () => {
-    const q = query.trim();
-    if (!q) {
-      setSearchError("Enter a value before searching.");
+  const onConnectGmail = useCallback(async () => {
+    const parsed = profileEmailSchema.safeParse(query.trim());
+    if (!parsed.success) {
+      setSearchError(parsed.error.issues[0]?.message ?? "Enter a valid email address.");
       return;
     }
-    const normalizedQuery =
-      queryMode === "username"
-        ? q.replace(/^@+/, "").toLowerCase()
-        : queryMode === "domain"
-          ? q.toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "")
-          : q.toLowerCase();
-    setQuery(normalizedQuery);
+    const normalizedEmail = parsed.data.trim().toLowerCase();
     setSearchError(null);
+    setConnectLoading(true);
+    setGmailOAuthBanner(null);
     try {
-      setSearchLoading(true);
-      setScanBarPct(4);
-      setReport(null);
-      setPipelines([]);
-      setResults([]);
-      setSelectedCandidateIds(new Set());
-      setShowViewInVault(false);
-      const userFullName = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() || "Unknown User";
-      const email = signedInEmail ?? "";
-      if (!email) {
-        setSearchError("Your account needs a verified email before running search.");
-        return;
-      }
       const anchorRes = await fetch("/api/vault/email-anchor", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: normalizedEmail }),
+      });
+      const anchorBody = (await anchorRes.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!anchorRes.ok) {
+        setSearchError(
+          typeof anchorBody.error === "string" ? `Could not save profile email (${anchorBody.error}).` : "Could not save profile email.",
+        );
+        return;
+      }
+      const vaultItemId = typeof anchorBody.vaultItemId === "string" ? anchorBody.vaultItemId : null;
+      const norm = typeof anchorBody.normalizedEmail === "string" ? anchorBody.normalizedEmail : normalizedEmail;
+      if (vaultItemId) setResolvedEmailVaultItemId(vaultItemId);
+      setQuery(norm);
+      sessionStorage.setItem(SESSION_PENDING_GMAIL_EMAIL, norm);
+      window.location.href = "/api/import/gmail/authorize?returnTo=/search";
+    } catch {
+      setSearchError("Could not reach server. Check your connection.");
+    } finally {
+      setConnectLoading(false);
+    }
+  }, [query]);
+
+  const onReviewCandidates = useCallback(
+    async (action: "accept" | "reject") => {
+      if (pendingSelectedIds.length === 0) return;
+      if (action === "accept" && !resolvedEmailVaultItemId) {
+        setReviewBanner({
+          kind: "err",
+          text: "Email anchor missing. Run scan again or reconnect Gmail.",
+        });
+        return;
+      }
+      if (!importScanMeta) {
+        setReviewBanner({ kind: "err", text: "Scan session missing. Run scan again." });
+        return;
+      }
+      setReviewLoading(true);
+      setReviewBanner(null);
+      try {
+        const chunks: string[][] = [];
+        for (let i = 0; i < pendingSelectedIds.length; i += MAX_REVIEW_CANDIDATE_IDS) {
+          chunks.push(pendingSelectedIds.slice(i, i + MAX_REVIEW_CANDIDATE_IDS));
+        }
+        let approved = 0;
+        let rejected = 0;
+        let skipped = 0;
+        for (const chunk of chunks) {
+          const res = await fetch("/api/import/candidates/review", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+              action === "accept"
+                ? { action: "approve", candidateIds: chunk, emailVaultItemId: resolvedEmailVaultItemId }
+                : { action: "reject", candidateIds: chunk },
+            ),
+          });
+          if (!res.ok) {
+            setReviewBanner({ kind: "err", text: "Candidate review failed. Try again." });
+            return;
+          }
+          const body = (await res.json()) as {
+            approvedVaultItemIds?: string[];
+            rejectedCount?: number;
+            skippedCount?: number;
+          };
+          if (action === "accept") {
+            approved += body.approvedVaultItemIds?.length ?? 0;
+            skipped += body.skippedCount ?? 0;
+          } else {
+            rejected += body.rejectedCount ?? chunk.length;
+          }
+        }
+        if (action === "accept") {
+          setReviewBanner({
+            kind: "ok",
+            text: `Approved ${pendingSelectedIds.length} row(s): ${approved} added to vault${skipped ? `, ${skipped} skipped` : ""}.`,
+          });
+          setShowViewInVault(pendingSelectedIds.length > 0);
+        } else {
+          setReviewBanner({ kind: "ok", text: `Rejected ${rejected} candidate row(s).` });
+        }
+        setSelectedCandidateIds(new Set());
+        await refreshImportView(importScanMeta);
+      } catch {
+        setReviewBanner({ kind: "err", text: "Candidate review failed (network)." });
+      } finally {
+        setReviewLoading(false);
+      }
+    },
+    [importScanMeta, pendingSelectedIds, refreshImportView, resolvedEmailVaultItemId],
+  );
+
+  const onSearch = async () => {
+    const parsed = profileEmailSchema.safeParse(query.trim());
+    if (!parsed.success) {
+      setSearchError(parsed.error.issues[0]?.message ?? "Enter a valid email address.");
+      return;
+    }
+    const normalizedEmail = parsed.data.trim().toLowerCase();
+    setQuery(normalizedEmail);
+    setSearchError(null);
+    setShowNeedsGmailConnect(false);
+    setGmailOAuthBanner(null);
+    setSearchLoading(true);
+    setScanBarPct(6);
+    setReport(null);
+    setPipelines([]);
+    setResults([]);
+    setImportScanMeta(null);
+    setSelectedCandidateIds(new Set());
+    setShowViewInVault(false);
+    setScanNotice(null);
+    abandonFiredJobIdRef.current = null;
+
+    try {
+      const anchorRes = await fetch("/api/vault/email-anchor", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normalizedEmail }),
       });
       if (anchorRes.ok) {
         const anchorBody = (await anchorRes.json().catch(() => ({}))) as { vaultItemId?: string };
         if (anchorBody.vaultItemId) setResolvedEmailVaultItemId(anchorBody.vaultItemId);
       }
-      const res = await fetch("/api/public-audit/runs", {
+
+      const gmailRes = await fetch("/api/import/gmail", { credentials: "same-origin" });
+      if (!gmailRes.ok) {
+        setSearchError(gmailRes.status === 401 ? "Sign in required." : "Could not load Gmail connectors.");
+        return;
+      }
+      const gmailData = (await gmailRes.json()) as { connectors?: { id: string; gmailAddress: string }[] };
+      const connectors = gmailData.connectors ?? [];
+      const connector = connectors.find((c) => c.gmailAddress.trim().toLowerCase() === normalizedEmail);
+      if (!connector) {
+        setShowNeedsGmailConnect(true);
+        setSearchError(null);
+        return;
+      }
+
+      const jobRes = await fetch("/api/import/jobs", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          queryType: queryMode,
-          query: normalizedQuery,
-          fullName: userFullName,
-          email,
-          usernames: queryMode === "username" ? normalizedQuery : undefined,
-          website: queryMode === "domain" ? normalizedQuery : undefined,
-          notes: `Search query: ${queryMode}:${normalizedQuery}`,
-          consent: {
-            selfScanAcknowledged: true,
-            publicSourcesAcknowledged: true,
-            approximateMatchesAcknowledged: true,
-          },
+          gmailConnectorId: connector.id,
+          profileEmail: normalizedEmail,
         }),
       });
-      const body = (await res.json().catch(() => ({}))) as { runId?: string; error?: string };
-      if (!res.ok || !body.runId) {
-        setSearchError(body.error ?? "Could not start search run.");
+      const jobBody = (await jobRes.json().catch(() => ({}))) as Record<string, unknown>;
+
+      if (!jobRes.ok) {
+        const code = typeof jobBody.error === "string" ? jobBody.error : "";
+        const message = typeof jobBody.message === "string" ? jobBody.message : null;
+        if (code === "IMPORT_COOLDOWN") {
+          const retryAfter =
+            typeof jobBody.retryAfterSeconds === "number" && Number.isFinite(jobBody.retryAfterSeconds)
+              ? Math.max(1, Math.round(jobBody.retryAfterSeconds))
+              : null;
+          setSearchError(
+            retryAfter ? `Scan cooldown active. Try again in about ${retryAfter}s.` : "Scan cooldown active. Please wait briefly before trying again.",
+          );
+          return;
+        }
+        if (code === "GMAIL_REAUTH_REQUIRED") {
+          setSearchError("Gmail connection expired. Use Connect Gmail below, then scan again.");
+          setShowNeedsGmailConnect(true);
+          return;
+        }
+        setSearchError(message ?? code ?? "Scan failed.");
         return;
       }
-      setActiveRunId(body.runId);
-      const detailRes = await fetch(`/api/public-audit/runs/${body.runId}?candidateStatus=pending`, {
-        credentials: "same-origin",
+
+      const jobId = typeof jobBody.jobId === "string" ? jobBody.jobId : null;
+      if (!jobId) {
+        setSearchError("Unexpected response from server.");
+        return;
+      }
+
+      const detected = typeof jobBody.detectedCandidates === "number" ? jobBody.detectedCandidates : 0;
+      const inserted = typeof jobBody.insertedCandidates === "number" ? jobBody.insertedCandidates : 0;
+      const messagesScanned = typeof jobBody.messagesScanned === "number" ? jobBody.messagesScanned : 0;
+      const meta: ImportScanMeta = { jobId, detected, inserted, messagesScanned };
+      setImportScanMeta(meta);
+
+      if (inserted === 0 && detected > 0) {
+        setScanNotice(
+          `This run matched ${detected} service signal(s), but none were added as new rows (they already exist as pending or approved for your account). Showing any existing pending imports below.`,
+        );
+      } else if (inserted === 0 && detected === 0 && messagesScanned > 0) {
+        setScanNotice(
+          `Scanned ${messagesScanned} message(s) in the last 540 days. No account/subscription candidates met the detector thresholds (transactional subject/snippet patterns from non-personal senders).`,
+        );
+      }
+
+      const params = new URLSearchParams({ unified: "true", status: "pending" });
+      const candRes = await fetch(`/api/import/candidates?${params.toString()}`, { credentials: "same-origin" });
+      if (!candRes.ok) {
+        setSearchError("Scan finished but candidates could not be loaded.");
+        return;
+      }
+      const candData = (await candRes.json()) as { unified?: UnifiedImportCandidateGroup[] };
+      const unified = candData.unified ?? [];
+      const { results: nextResults, pipelines: nextPipelines, report: nextReport } = mapUnifiedImportToView(
+        unified,
+        jobId,
+        { detected, inserted },
+      );
+      setResults(nextResults);
+      setPipelines(nextPipelines);
+      setReport(nextReport);
+
+      recordFunnelFeedback({
+        theme: "expectations",
+        surface: "search",
+        metadata: {
+          pathname: "/search",
+          funnelStep: "scan_started",
+          importJobId: jobId,
+        },
       });
-      if (!detailRes.ok) return;
-      const detail = (await detailRes.json()) as RunDetail;
-      setReport(detail.run);
-      setResults(detail.candidates ?? []);
-      setPipelines(detail.pipelines ?? []);
     } catch {
       setSearchError("Search failed. Try again.");
     } finally {
@@ -373,38 +608,24 @@ export function OpsisSearchHome() {
         <section className="relative z-10 w-full max-w-5xl px-0 sm:px-2">
           <div className="space-y-7 text-center">
             <div className="mx-auto flex max-w-xl flex-col items-center gap-3 lg:max-w-none">
-              <p className="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-cyan-400/95">
-                Public footprint scan
-              </p>
+              <p className="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-cyan-400/95">Inbox scan</p>
               <h1 className="text-balance font-heading text-3xl font-semibold leading-[1.08] tracking-[-0.02em] text-white sm:text-4xl">
-                Search what the internet knows
+                See what your mailbox implies
               </h1>
               <p className="max-w-lg text-pretty text-sm leading-relaxed text-slate-400 sm:text-base">
-                Run a scan, review surfaced matches, and push approved findings into your vault.
+                Connect Gmail, scan recent mail for services and subscriptions, then approve what belongs in your vault.
               </p>
             </div>
 
-            {showSearchControls ? (
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                {queryModes.map((mode) => {
-                  const active = mode.key === queryMode;
-                  return (
-                    <button
-                      key={mode.key}
-                      type="button"
-                      onClick={() => setQueryMode(mode.key)}
-                      className={cn(
-                        "rounded-full border px-5 py-2 text-sm font-semibold transition-colors",
-                        active
-                          ? "border-cyan-500/25 bg-cyan-500/10 text-cyan-200 shadow-[0_0_20px_-8px_rgba(34,211,238,0.35)]"
-                          : "border-white/[0.08] bg-white/[0.04] text-slate-300 hover:border-white/[0.12] hover:text-white",
-                      )}
-                    >
-                      {mode.label}
-                    </button>
-                  );
-                })}
-              </div>
+            {gmailOAuthBanner ? (
+              <p
+                className={cn(
+                  "mx-auto max-w-xl text-sm",
+                  gmailOAuthBanner.kind === "ok" ? "text-emerald-300" : "text-rose-300",
+                )}
+              >
+                {gmailOAuthBanner.text}
+              </p>
             ) : null}
 
             {showSearchControls ? (
@@ -417,9 +638,11 @@ export function OpsisSearchHome() {
               >
                 <div className="flex flex-col gap-2 rounded-2xl border border-white/[0.08] bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-2.5 shadow-[0_0_60px_-12px_rgba(34,211,238,0.12)] backdrop-blur-sm sm:flex-row sm:items-stretch">
                   <input
+                    type="email"
+                    autoComplete="email"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder={placeholder}
+                    placeholder="you@example.com"
                     className="h-12 flex-1 rounded-xl border border-white/[0.08] bg-white/[0.04] px-5 text-base text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-500/40 focus:ring-1 focus:ring-cyan-400/25"
                   />
                   <button
@@ -431,11 +654,32 @@ export function OpsisSearchHome() {
                     )}
                   >
                     <Search className="size-4 shrink-0" aria-hidden />
-                    {searchLoading ? "Searching…" : "Search"}
+                    {searchLoading ? "Scanning…" : "Scan inbox"}
                   </button>
                 </div>
               </form>
             ) : null}
+
+            {showNeedsGmailConnect && !report ? (
+              <div className="mx-auto max-w-xl space-y-3 rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3 text-left text-sm text-slate-200">
+                <p className="text-slate-300">
+                  No Gmail connector for <span className="font-mono text-cyan-200/90">{query.trim().toLowerCase()}</span>. Connect
+                  OAuth read-only access for that mailbox, then run the scan again.
+                </p>
+                <button
+                  type="button"
+                  disabled={connectLoading}
+                  onClick={() => void onConnectGmail()}
+                  className={cn(
+                    "inline-flex w-full items-center justify-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold disabled:opacity-60 sm:w-auto",
+                    landingCta,
+                  )}
+                >
+                  {connectLoading ? "Preparing…" : "Connect Gmail"}
+                </button>
+              </div>
+            ) : null}
+
             {searchError ? <p className="text-sm text-rose-300">{searchError}</p> : null}
 
             {searchLoading || report ? (
@@ -443,11 +687,11 @@ export function OpsisSearchHome() {
                 <div className="mb-3">
                   <p className="font-heading text-lg font-semibold tracking-tight text-white">Scan progress</p>
                   <p className="mt-0.5 text-xs leading-relaxed text-slate-400">
-                    Live preview: run a scan, watch ingestion progress, then inspect account matches.
+                    Live preview: inbox messages are analyzed for account and subscription signals you can promote to the vault.
                   </p>
                 </div>
                 <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-2.5">
-                  <p className="mb-0.5 font-mono text-[9px] font-medium uppercase tracking-[0.2em] text-slate-500">{queryMode}</p>
+                  <p className="mb-0.5 font-mono text-[9px] font-medium uppercase tracking-[0.2em] text-slate-500">email</p>
                   <p className="rounded-md border border-white/[0.08] bg-[#05070a]/80 px-2.5 py-1.5 font-mono text-xs tracking-wide text-cyan-100/90">
                     {query.trim().toLowerCase()}
                   </p>
@@ -465,7 +709,9 @@ export function OpsisSearchHome() {
                     <span>{scanPhaseLabel(searchLoading, report)}</span>
                     <span className="text-right">
                       {resultsSummaryRight.mode === "pending" ? (
-                        <span className="text-cyan-300/80">Discovering matches…</span>
+                        <span className="max-w-[min(20rem,55vw)] text-cyan-300/85">
+                          Fetching message metadata in batches — large mailboxes can take a few minutes.
+                        </span>
                       ) : (
                         <span>
                           {resultsSummaryRight.value} pending review
@@ -473,6 +719,12 @@ export function OpsisSearchHome() {
                       )}
                     </span>
                   </div>
+                  {searchLoading ? (
+                    <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+                      The page stays on this screen until the server finishes listing and reading Gmail (up to thousands of
+                      recent messages). This is normal; it is not frozen.
+                    </p>
+                  ) : null}
                 </div>
 
                 {results.length > 0 ? (
@@ -495,11 +747,36 @@ export function OpsisSearchHome() {
 
                 {report ? (
                   <div className="mt-2.5 flex flex-wrap items-center gap-3 text-[10px] font-normal tracking-wide text-slate-500">
-                    <span>run {reportRunRef ? reportRunRef.slice(0, 8) : "pending"}</span>
-                    <span>{report.totalCandidates} total</span>
+                    <span>job {reportJobRef ? reportJobRef.slice(0, 8) : "pending"}</span>
+                    <span>{report.totalCandidates} detected</span>
                     <span>{report.importedCount} imported</span>
                     <span>{report.reviewCount} pending</span>
                     <span>{report.status.replaceAll("_", " ")}</span>
+                    {importScanMeta ? <span>{importScanMeta.messagesScanned} messages scanned</span> : null}
+                  </div>
+                ) : null}
+                {exposureNarrative ? (
+                  <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/5 p-2.5">
+                    <p className="text-xs font-medium text-amber-100/95">
+                      {exposureNarrative.headline ?? "Exposure signals were detected."}
+                    </p>
+                    {Array.isArray(exposureNarrative.highlights) && exposureNarrative.highlights.length > 0 ? (
+                      <p className="mt-1 text-[11px] text-amber-100/75">
+                        {exposureNarrative.highlights.slice(0, 4).join(" · ")}
+                      </p>
+                    ) : null}
+                    {Array.isArray(exposureNarrative.riskBadges) && exposureNarrative.riskBadges.length > 0 ? (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {exposureNarrative.riskBadges.map((badge) => (
+                          <span
+                            key={badge}
+                            className="rounded-full border border-rose-300/25 bg-rose-400/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-rose-200/90"
+                          >
+                            {badge.replaceAll("_", " ")}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -507,9 +784,14 @@ export function OpsisSearchHome() {
 
             {report ? (
               <div className="mx-auto w-full max-w-[980px] rounded-2xl border border-white/[0.08] bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-3.5 text-left shadow-[0_0_60px_-12px_rgba(34,211,238,0.12)] backdrop-blur-sm">
+                {scanNotice ? (
+                  <p className="mb-3 rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs leading-relaxed text-amber-50/95">
+                    {scanNotice}
+                  </p>
+                ) : null}
                 <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs leading-snug text-slate-400">
-                    Detailed intelligence:{" "}
+                    Inbox candidates:{" "}
                     {scanUiBusy && results.length === 0 ? (
                       <span className="font-medium text-cyan-300/80">collecting candidate rows…</span>
                     ) : (

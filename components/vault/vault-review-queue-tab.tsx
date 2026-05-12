@@ -3,10 +3,17 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { ScanOnboardingHint } from "@/components/vault/scan-onboarding-hint";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  markScanOnboardingHintDone,
+  SCAN_ONBOARDING_KEYS,
+  SCAN_ONBOARDING_RESET_EVENT,
+  shouldShowScanOnboardingHint,
+} from "@/lib/scan-onboarding";
 import { MAX_REVIEW_CANDIDATE_IDS } from "@/lib/validations/import";
 import { dispatchVaultDataChanged } from "@/lib/vault-changed-event";
 import { cn } from "@/lib/utils";
@@ -58,6 +65,7 @@ export function VaultReviewQueueTab() {
   const [profileEmail, setProfileEmail] = useState("");
   const [resolvedVaultId, setResolvedVaultId] = useState<string | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [showReviewHint, setShowReviewHint] = useState(false);
 
   const loadGmail = useCallback(async () => {
     setGmailError(null);
@@ -103,6 +111,18 @@ export function VaultReviewQueueTab() {
     void loadGmail();
     void loadPublic();
   }, [loadGmail, loadPublic]);
+
+  useEffect(() => {
+    setShowReviewHint(shouldShowScanOnboardingHint(SCAN_ONBOARDING_KEYS.reviewQueue));
+  }, []);
+
+  useEffect(() => {
+    const sync = () => {
+      setShowReviewHint(shouldShowScanOnboardingHint(SCAN_ONBOARDING_KEYS.reviewQueue));
+    };
+    window.addEventListener(SCAN_ONBOARDING_RESET_EVENT, sync);
+    return () => window.removeEventListener(SCAN_ONBOARDING_RESET_EVENT, sync);
+  }, []);
 
   const gmailPendingIds = useMemo(() => {
     if (!gmailGroups) return [];
@@ -182,6 +202,8 @@ export function VaultReviewQueueTab() {
         kind: "ok",
         text: action === "approve" ? `Approved ${n} Gmail candidate row(s).` : `Rejected ${n} Gmail candidate row(s).`,
       });
+      markScanOnboardingHintDone(SCAN_ONBOARDING_KEYS.reviewQueue);
+      setShowReviewHint(false);
       setGmailSelected(new Set());
       await loadGmail();
       router.refresh();
@@ -234,6 +256,8 @@ export function VaultReviewQueueTab() {
               ? "Rejected selected public audit matches."
               : "Ignored selected public audit matches.",
       });
+      markScanOnboardingHintDone(SCAN_ONBOARDING_KEYS.reviewQueue);
+      setShowReviewHint(false);
       setPublicSelected(new Set());
       await loadPublic();
       router.refresh();
@@ -276,6 +300,16 @@ export function VaultReviewQueueTab() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {showReviewHint ? (
+            <ScanOnboardingHint
+              title="Final step: review with confidence"
+              body="Select pending rows, then approve or accept only confident matches. Reject or ignore uncertain rows; you can run future scans anytime."
+              onDismiss={() => {
+                markScanOnboardingHintDone(SCAN_ONBOARDING_KEYS.reviewQueue);
+                setShowReviewHint(false);
+              }}
+            />
+          ) : null}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="rq-profile-email">Profile email (for approvals)</Label>

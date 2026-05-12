@@ -1,6 +1,7 @@
 import { AppPageHeader } from "@/components/app-page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { IdentitySettingsForm } from "@/components/settings/identity-settings-form";
+import { ScanOnboardingResetCard } from "@/components/settings/scan-onboarding-reset-card";
 import * as identityService from "@/server/services/identity.service";
 import { auth } from "@clerk/nextjs/server";
 
@@ -33,6 +34,7 @@ export default async function SettingsPage() {
           )}
         </CardContent>
       </Card>
+      <ScanOnboardingResetCard />
     </div>
   );
 }

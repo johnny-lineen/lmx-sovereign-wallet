@@ -4,11 +4,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { ScanOnboardingHint } from "@/components/vault/scan-onboarding-hint";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  markScanOnboardingHintDone,
+  SCAN_ONBOARDING_KEYS,
+  SCAN_ONBOARDING_RESET_EVENT,
+  shouldShowScanOnboardingHint,
+} from "@/lib/scan-onboarding";
 import {
   pipelineLabel,
   type PublicAuditPipelineId,
@@ -203,6 +210,7 @@ export function VaultPublicAuditTab({ highlightRunId }: { highlightRunId: string
   const [reviewLoading, setReviewLoading] = useState(false);
   const [resolvedEmailVaultId, setResolvedEmailVaultId] = useState<string | null>(null);
   const [intelScanBarPct, setIntelScanBarPct] = useState(0);
+  const [showAuditHint, setShowAuditHint] = useState(false);
 
   const loadRuns = useCallback(async () => {
     setRunsError(null);
@@ -226,6 +234,18 @@ export function VaultPublicAuditTab({ highlightRunId }: { highlightRunId: string
   useEffect(() => {
     void loadRuns();
   }, [loadRuns]);
+
+  useEffect(() => {
+    setShowAuditHint(shouldShowScanOnboardingHint(SCAN_ONBOARDING_KEYS.publicAudit));
+  }, []);
+
+  useEffect(() => {
+    const sync = () => {
+      setShowAuditHint(shouldShowScanOnboardingHint(SCAN_ONBOARDING_KEYS.publicAudit));
+    };
+    window.addEventListener(SCAN_ONBOARDING_RESET_EVENT, sync);
+    return () => window.removeEventListener(SCAN_ONBOARDING_RESET_EVENT, sync);
+  }, []);
 
   const activeRun = useMemo(() => runs?.find((r) => r.id === activeRunId) ?? null, [runs, activeRunId]);
 
@@ -379,6 +399,8 @@ export function VaultPublicAuditTab({ highlightRunId }: { highlightRunId: string
         kind: "ok",
         text: "Audit queued and running in the background. Results will appear below as soon as ingestion finishes.",
       });
+      markScanOnboardingHintDone(SCAN_ONBOARDING_KEYS.publicAudit);
+      setShowAuditHint(false);
       await loadRuns();
       if (id) {
         setActiveRunId(id);
@@ -517,6 +539,16 @@ export function VaultPublicAuditTab({ highlightRunId }: { highlightRunId: string
           ) : null}
         </CardHeader>
         <CardContent className="space-y-4">
+          {showAuditHint ? (
+            <ScanOnboardingHint
+              title="What this audit does"
+              body="Use your verified identity details and consent checkboxes, then run the audit. Review pending matches and accept only profiles that are truly yours."
+              onDismiss={() => {
+                markScanOnboardingHintDone(SCAN_ONBOARDING_KEYS.publicAudit);
+                setShowAuditHint(false);
+              }}
+            />
+          ) : null}
           <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
             <strong className="text-foreground">Safety:</strong> only use this on your own identity. We use public or
             approved sources (e.g. Have I Been Pwned when configured). Matches may be approximate.

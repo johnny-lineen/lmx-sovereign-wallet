@@ -11,6 +11,9 @@ import {
 test("pipelineIdFromSourceType maps known adapters", () => {
   assert.equal(pipelineIdFromSourceType("breach_adapter"), "breaches");
   assert.equal(pipelineIdFromSourceType("gmail_inbox_adapter"), "emails");
+  assert.equal(pipelineIdFromSourceType("gmail_subscription_adapter"), "subscriptions");
+  assert.equal(pipelineIdFromSourceType("holehe_adapter"), "subscriptions");
+  assert.equal(pipelineIdFromSourceType("open_sanctions_adapter"), "public_records");
   assert.equal(pipelineIdFromSourceType("public_search_adapter"), "signals");
   assert.equal(pipelineIdFromSourceType("input_identity_adapter"), "signals");
   assert.equal(pipelineIdFromSourceType("username_check_adapter"), "accounts");
@@ -20,19 +23,23 @@ test("pipelineIdFromSourceType maps known adapters", () => {
 test("pipelineLabel returns readable titles", () => {
   assert.equal(pipelineLabel("breaches"), "Breaches");
   assert.equal(pipelineLabel("emails"), "Emails");
+  assert.equal(pipelineLabel("subscriptions"), "Subscriptions");
 });
 
 test("groupCandidatesByPipeline preserves order and skips empty", () => {
   const grouped = groupCandidatesByPipeline([
+    { sourceType: "holehe_adapter" },
     { sourceType: "breach_adapter" },
     { sourceType: "gmail_inbox_adapter" },
     { sourceType: "breach_adapter" },
   ]);
-  assert.equal(grouped.length, 2);
-  assert.equal(grouped[0]!.id, "breaches");
-  assert.equal(grouped[0]!.candidates.length, 2);
-  assert.equal(grouped[1]!.id, "emails");
-  assert.equal(grouped[1]!.candidates.length, 1);
+  assert.equal(grouped.length, 3);
+  assert.equal(grouped[0]!.id, "subscriptions");
+  assert.equal(grouped[0]!.candidates.length, 1);
+  assert.equal(grouped[1]!.id, "breaches");
+  assert.equal(grouped[1]!.candidates.length, 2);
+  assert.equal(grouped[2]!.id, "emails");
+  assert.equal(grouped[2]!.candidates.length, 1);
 });
 
 test("buildPipelineSummaryPayload records HIBP skip and provider errors", () => {

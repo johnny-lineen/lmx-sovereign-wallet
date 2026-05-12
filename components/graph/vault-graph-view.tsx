@@ -8,7 +8,7 @@ import type { z } from "zod";
 import { ChevronLeft, ChevronRight, Info, Maximize2, RotateCcw, Sparkles, Tags, X } from "lucide-react";
 
 import type { GraphEdgePayload, GraphNodePayload, GraphPayload } from "@/lib/graph-payload";
-import { computeGraphLayoutTargets, computeUndirectedDegrees } from "@/lib/graph-layout";
+import { computeUndirectedDegrees } from "@/lib/graph-layout";
 import { VAULT_DATA_CHANGED_EVENT } from "@/lib/vault-changed-event";
 import { vaultItemTypeSchema } from "@/lib/validations/vault";
 import { cn } from "@/lib/utils";
@@ -19,11 +19,12 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import { forceNodeFill, forceNodeVal } from "./vault-graph-force-palette";
+import { buildVaultForceGraphModel } from "./build-vault-force-graph-model";
+import { forceNodeFill } from "./vault-graph-force-palette";
+import type { KnowledgeGraphHandle } from "./vault-knowledge-graph-canvas";
+import { humanizeVaultType } from "./vault-graph-theme";
 
 type InsightMode = "none" | "risk" | "duplicates" | "disconnected";
-import type { FGLink, FGNode, KnowledgeGraphHandle } from "./vault-knowledge-graph-canvas";
-import { humanizeVaultType } from "./vault-graph-theme";
 
 const VaultKnowledgeGraphCanvas = dynamic(
   () => import("./vault-knowledge-graph-canvas").then((m) => m.VaultKnowledgeGraphCanvas),
@@ -42,73 +43,6 @@ const detailPanelClass =
 
 const floatingBarClass =
   "flex items-center gap-0.5 rounded-full border border-zinc-700/60 bg-zinc-950/90 px-0.5 py-0.5 shadow-lg backdrop-blur-md";
-
-/**
- * Adds short, deduped edges between emails that share the same non-email neighbor so the force
- * simulation pulls related mail into one intertwined region instead of isolated hub-and-spoke rings.
- */
-function appendCohesionEmailLinks(nodes: FGNode[], vaultLinks: FGLink[]): FGLink[] {
-  const emailIds = new Set(nodes.filter((n) => n.type === "email").map((n) => n.id));
-  if (emailIds.size < 2) return vaultLinks;
-
-  const adj = new Map<string, Set<string>>();
-  const touch = (a: string, b: string) => {
-    if (a === b) return;
-    if (!adj.has(a)) adj.set(a, new Set());
-    if (!adj.has(b)) adj.set(b, new Set());
-    adj.get(a)!.add(b);
-    adj.get(b)!.add(a);
-  };
-  for (const e of vaultLinks) {
-    touch(e.source, e.target);
-  }
-
-  const pairSeen = new Set<string>();
-  const extra: FGLink[] = [];
-
-  for (const n of nodes) {
-    if (n.type === "email") continue;
-    const nb = adj.get(n.id);
-    if (!nb) continue;
-    const emails = [...nb].filter((id) => emailIds.has(id)).sort();
-    if (emails.length < 2) continue;
-    for (let i = 0; i < emails.length - 1; i++) {
-      const a = emails[i]!;
-      const b = emails[i + 1]!;
-      const key = a < b ? `${a}\0${b}` : `${b}\0${a}`;
-      if (pairSeen.has(key)) continue;
-      pairSeen.add(key);
-      extra.push({
-        id: `__cohesion__${key}`,
-        source: a,
-        target: b,
-        label: "",
-        kind: "cohesion",
-      });
-    }
-  }
-
-  return [...vaultLinks, ...extra];
-}
-
-function resolveAnchorForFiltered(
-  payloadAnchor: string | null | undefined,
-  emailNodes: GraphNodePayload[],
-  degree: Map<string, number>,
-): string | null {
-  if (payloadAnchor && emailNodes.some((n) => n.id === payloadAnchor)) return payloadAnchor;
-  if (emailNodes.length === 0) return null;
-  let best = emailNodes[0]!.id;
-  let bestD = -1;
-  for (const n of emailNodes) {
-    const d = degree.get(n.id) ?? 0;
-    if (d > bestD) {
-      bestD = d;
-      best = n.id;
-    }
-  }
-  return best;
-}
 
 function riskHighlightIds(
   nodes: GraphNodePayload[],
@@ -526,51 +460,16 @@ function GraphWorkspace({
     return `${typeFilter}\0${sourceFilter}\0${providerFilter}\0${search}\0${ids}`;
   }, [emptyVault, filtered.nodesFiltered, typeFilter, sourceFilter, providerFilter, search]);
 
-  const graphData = useMemo(() => {
-    const nodeIds = new Set(filtered.nodesFiltered.map((n) => n.id));
-    const degree = computeUndirectedDegrees(nodeIds, filtered.edgesFiltered);
-    const emails = filtered.nodesFiltered.filter((n) => n.type === "email");
-    const anchorId = resolveAnchorForFiltered(
-      payload.overview.anchorEmailNodeId,
-      emails,
-      degree,
-    );
-    const layout = computeGraphLayoutTargets(
-      filtered.nodesFiltered,
-      filtered.edgesFiltered,
-      anchorId,
-    );
-
-    const nodes: FGNode[] = filtered.nodesFiltered.map((n) => {
-      const d = degree.get(n.id) ?? 0;
-      const t = layout.get(n.id) ?? { tx: 0, ty: 0 };
-      const isAnchor = anchorId === n.id;
-      return {
-        ...n,
-        id: n.id,
-        mergeGroupSize: n.mergeGroupSize ?? 1,
-        graphDegree: d,
-        val: forceNodeVal(n.type, d),
-        layoutTx: t.tx,
-        layoutTy: t.ty,
-        isLayoutAnchor: isAnchor,
-        ...(isAnchor ? { fx: 0, fy: 0 } : {}),
-      };
-    });
-
-    const vaultLinks: FGLink[] = filtered.edgesFiltered.map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      label: e.label,
-      kind: "vault" as const,
-    }));
-    let links = appendCohesionEmailLinks(nodes, vaultLinks);
-    if (!showDerivedLinks) {
-      links = links.filter((l) => l.kind === "vault");
-    }
-    return { nodes, links };
-  }, [filtered, showDerivedLinks, payload.overview.anchorEmailNodeId]);
+  const graphData = useMemo(
+    () =>
+      buildVaultForceGraphModel({
+        nodes: filtered.nodesFiltered,
+        edges: filtered.edgesFiltered,
+        anchorEmailNodeId: payload.overview.anchorEmailNodeId,
+        showDerivedLinks,
+      }),
+    [filtered, showDerivedLinks, payload.overview.anchorEmailNodeId],
+  );
 
   const auditHighlightIds = useMemo(() => {
     const id = highlightAuditRunId?.trim();

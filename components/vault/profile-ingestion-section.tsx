@@ -3,14 +3,21 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { ScanOnboardingHint } from "@/components/vault/scan-onboarding-hint";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  markScanOnboardingHintDone,
+  SCAN_ONBOARDING_KEYS,
+  SCAN_ONBOARDING_RESET_EVENT,
+  shouldShowScanOnboardingHint,
+} from "@/lib/scan-onboarding";
 import { MAX_REVIEW_CANDIDATE_IDS, profileEmailSchema } from "@/lib/validations/import";
 import { dispatchVaultDataChanged } from "@/lib/vault-changed-event";
 import { cn } from "@/lib/utils";
-const SESSION_PENDING_GMAIL_EMAIL = "lmx_pending_gmail_oauth_email";
+import { SESSION_PENDING_GMAIL_EMAIL } from "@/lib/gmail-import-session";
 
 type GmailConnector = {
   id: string;
@@ -133,6 +140,7 @@ export function ProfileIngestionSection() {
   const [connectLoading, setConnectLoading] = useState(false);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [showScanHint, setShowScanHint] = useState(false);
 
   const normalizedInputEmail = useMemo(() => {
     const r = profileEmailSchema.safeParse(profileEmail);
@@ -193,6 +201,18 @@ export function ProfileIngestionSection() {
       clearOAuthParams();
     }
   }, [searchParams, clearOAuthParams, ensureAnchorForEmail]);
+
+  useEffect(() => {
+    setShowScanHint(shouldShowScanOnboardingHint(SCAN_ONBOARDING_KEYS.emailScan));
+  }, []);
+
+  useEffect(() => {
+    const sync = () => {
+      setShowScanHint(shouldShowScanOnboardingHint(SCAN_ONBOARDING_KEYS.emailScan));
+    };
+    window.addEventListener(SCAN_ONBOARDING_RESET_EVENT, sync);
+    return () => window.removeEventListener(SCAN_ONBOARDING_RESET_EVENT, sync);
+  }, []);
 
   useEffect(() => {
     if (!boundNormalizedEmail) return;
@@ -452,6 +472,8 @@ export function ProfileIngestionSection() {
         kind: "ok",
         text: `Scan finished: ${inserted} new candidate(s) from ${scanned} message(s). Review below.`,
       });
+      markScanOnboardingHintDone(SCAN_ONBOARDING_KEYS.emailScan);
+      setShowScanHint(false);
 
       await loadJobs();
       if (jobId) {
@@ -605,6 +627,16 @@ export function ProfileIngestionSection() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {showScanHint ? (
+          <ScanOnboardingHint
+            title="Start here: connect, then scan"
+            body="Enter your profile email, connect Gmail, then run Scan inbox. Next, approve the rows you trust to add linked vault items."
+            onDismiss={() => {
+              markScanOnboardingHintDone(SCAN_ONBOARDING_KEYS.emailScan);
+              setShowScanHint(false);
+            }}
+          />
+        ) : null}
         <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
           <li>
             <span className="text-foreground">Enter your email</span> — we create or reuse a matching vault item as

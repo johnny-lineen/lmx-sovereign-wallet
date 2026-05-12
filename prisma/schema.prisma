@@ -116,6 +116,16 @@ enum DemoAccountCountEstimate {
   range_75_plus
 }
 
+/// In-app product feedback themes (demo learning signals).
+enum FeedbackTheme {
+  confusion
+  perceived_value
+  trust
+  insight_quality
+  expectations
+  funnel_dropoff
+}
+
 /// High-signal email class inferred by deterministic rules (not AI).
 enum ImportCandidateSignal {
   welcome_account
@@ -147,6 +157,7 @@ model User {
   importCandidates ImportCandidate[]
   publicAuditRuns       PublicAuditRun[]
   publicAuditCandidates PublicAuditCandidate[]
+  productFeedback       ProductFeedback[]
 }
 
 /// Sovereign identity node; one root identity per user is ensured at bootstrap.
@@ -404,6 +415,25 @@ model PublicAuditCandidate {
 
   @@index([userId, status])
   @@index([auditRunId])
+}
+
+/// Authenticated user feedback for product learning (Dev Ops aggregate).
+model ProductFeedback {
+  id        String         @id @default(uuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  theme     FeedbackTheme
+  surface   String         @db.VarChar(64)
+  message   String?        @db.Text
+  /// Optional: -1 thumbs down, 0 neutral, 1 thumbs up.
+  rating    Int?
+  metadata  Json?
+  createdAt DateTime       @default(now())
+
+  @@index([createdAt])
+  @@index([theme])
+  @@index([surface])
+  @@index([userId, createdAt])
 }
 
 /// Anonymous/early-access intake from landing page before full product activation.

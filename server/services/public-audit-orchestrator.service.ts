@@ -1,17 +1,31 @@
 import type { Prisma, VaultItemType } from "@prisma/client";
 
-import { buildPipelineSummaryPayload } from "@/lib/public-audit-pipelines";
+import { buildPipelineSummaryPayload, countCandidatesByPipeline } from "@/lib/public-audit-pipelines";
 import { logError, logInfo } from "@/lib/observability";
 import { prisma } from "@/lib/prisma";
 import * as publicAuditRepo from "@/server/repositories/public-audit.repository";
 import type { RawPublicAuditCandidate } from "@/server/services/public-audit-adapters/breach-adapter";
 import { getPublicAuditConnectors } from "@/server/services/public-audit-connectors";
+import { executeConnectorWithPolicy } from "@/server/services/public-audit-adapter-runtime";
 import { GmailScanError } from "@/server/services/gmail-inbox-scan.shared";
 import { importPublicAuditCandidate } from "@/server/services/public-audit-import.service";
 import { applyBalancedQualityPass } from "@/server/services/public-audit-quality";
 
 function allowNameInferenceForRun(): boolean {
   return process.env.PUBLIC_AUDIT_ENABLE_NAME_INFERENCE?.trim() === "1";
+}
+
+function deriveUsernameSeeds(usernames: string[], submittedEmail: string): string[] {
+  const normalizedProvided = usernames
+    .map((u) => u.trim().replace(/^@+/, "").toLowerCase())
+    .filter((u) => u.length >= 2);
+  const local = submittedEmail.split("@")[0]?.trim().toLowerCase() ?? "";
+  const emailDerived = [
+    local,
+    local.replace(/[^a-z0-9_]/g, ""),
+    local.replace(/[._-]/g, ""),
+  ].filter((u) => u.length >= 3);
+  return [...new Set([...normalizedProvided, ...emailDerived])].slice(0, 8);
 }
 
 function normalizeCandidateUrl(url: string | null | undefined): string | null {
@@ -28,13 +42,36 @@ function normalizeCandidateUrl(url: string | null | undefined): string | null {
 function keepOnlyCorroboratedGeneratedCandidates(
   generated: RawPublicAuditCandidate[],
   corroboratedUrls: Set<string>,
+  options?: { allowUncorroboratedFallback?: boolean },
 ): RawPublicAuditCandidate[] {
   if (generated.length === 0) return generated;
-  if (corroboratedUrls.size === 0) return [];
+  if (corroboratedUrls.size === 0) {
+    if (options?.allowUncorroboratedFallback) {
+      return generated.slice(0, 6);
+    }
+    return [];
+  }
   return generated.filter((candidate) => {
     const normalized = normalizeCandidateUrl(candidate.url);
     return normalized ? corroboratedUrls.has(normalized) : false;
   });
+}
+
+function mergeProviderAndBaselineCandidates(
+  providerCandidates: RawPublicAuditCandidate[],
+  baseline: RawPublicAuditCandidate[],
+): RawPublicAuditCandidate[] {
+  const out = [...providerCandidates];
+  const dedupe = new Set(
+    providerCandidates.map((c) => `${c.sourceType}|${(c.matchedIdentifier ?? "").toLowerCase()}|${(c.url ?? "").toLowerCase()}`),
+  );
+  for (const candidate of baseline) {
+    const key = `${candidate.sourceType}|${(candidate.matchedIdentifier ?? "").toLowerCase()}|${(candidate.url ?? "").toLowerCase()}`;
+    if (dedupe.has(key)) continue;
+    dedupe.add(key);
+    out.push(candidate);
+  }
+  return out;
 }
 
 function baselineCandidatesFromSubmittedInput(input: {
@@ -130,6 +167,46 @@ function baselineCandidatesFromSubmittedInput(input: {
   return candidates;
 }
 
+const REVIEW_ONLY_SOURCE_TYPES = new Set([
+  "open_sanctions_adapter",
+  "urlscan_adapter",
+  "public_records_adapter",
+]);
+
+function shouldAutoImportCandidate(candidate: RawPublicAuditCandidate): boolean {
+  if (candidate.confidenceBand !== "high") return false;
+  if (REVIEW_ONLY_SOURCE_TYPES.has(candidate.sourceType)) return false;
+  return true;
+}
+
+function buildExposureNarrative(candidates: RawPublicAuditCandidate[]) {
+  const counts = countCandidatesByPipeline(candidates);
+  const highConfidenceCount = candidates.filter((c) => c.confidenceBand === "high").length;
+  const subscriptionCount = candidates.filter((c) =>
+    c.sourceType === "holehe_adapter" || c.sourceType === "user_scanner_adapter",
+  ).length;
+  const publicRecordsCount = candidates.filter((c) => c.sourceType === "open_sanctions_adapter").length;
+  const profileCount = candidates.filter((c) => c.auditKind === "profile").length;
+  return {
+    headline:
+      counts.accounts + subscriptionCount > 8
+        ? "Your digital footprint is broad and easy to correlate."
+        : "Your scan shows publicly discoverable footprint signals.",
+    highlights: [
+      `${counts.accounts} account signals`,
+      `${subscriptionCount} subscription signals`,
+      `${counts.breaches} breach signals`,
+      `${publicRecordsCount} public records signals`,
+      `${profileCount} profile-linked traces`,
+    ],
+    riskBadges: [
+      ...(counts.breaches > 0 ? ["breach_exposed"] : []),
+      ...(publicRecordsCount > 0 ? ["public_records_match"] : []),
+      ...(highConfidenceCount > 4 ? ["high_confidence_correlation"] : []),
+    ],
+  };
+}
+
 function rawToCreateData(
   runId: string,
   userId: string,
@@ -199,13 +276,14 @@ export async function executePublicAuditRun(
   await publicAuditRepo.updatePublicAuditRun(userId, runId, { status: "running", errorMessage: null });
 
   try {
-    const usernames: string[] = Array.isArray(run.usernamesJson)
+    const usernamesRaw: string[] = Array.isArray(run.usernamesJson)
       ? (run.usernamesJson as unknown[]).filter((x): x is string => typeof x === "string")
       : typeof run.usernamesJson === "string"
         ? [run.usernamesJson]
         : [];
 
     const normalizedEmail = run.submittedEmail.trim().toLowerCase();
+    const usernames = deriveUsernameSeeds(usernamesRaw, normalizedEmail);
     const hibpSkippedReason = process.env.HIBP_API_KEY?.trim() ? undefined : ("no_api_key" as const);
     const connectorRows: Record<string, RawPublicAuditCandidate[]> = {};
     const providerErrors: string[] = [];
@@ -217,28 +295,24 @@ export async function executePublicAuditRun(
     };
 
     const connectors = getPublicAuditConnectors(allowNameInferenceForRun());
+    const connectorDiagnostics: Record<string, Record<string, unknown>> = {};
     for (const connector of connectors) {
       if (!connector.enabled()) continue;
-      try {
-        const rows = await connector.fetch({
-          userId,
-          runId,
-          fullName: run.fullName,
-          submittedEmail: normalizedEmail,
-          usernames,
-          locationHint: run.locationHint,
-          websiteHint: run.websiteHint,
-        });
-        connectorRows[connector.id] = rows;
-        if (connector.id === "gmail") {
-          gmailDiagnostics = {
-            ...gmailDiagnostics,
-            code: rows.length > 0 ? "ok" : "scan_empty",
-            status: rows.length > 0 ? "ok" : "scan_empty",
-            candidatesDetected: rows.length,
-          };
-        }
-      } catch (error) {
+      const execution = await executeConnectorWithPolicy(connector, {
+        userId,
+        runId,
+        fullName: run.fullName,
+        submittedEmail: normalizedEmail,
+        usernames,
+        locationHint: run.locationHint,
+        websiteHint: run.websiteHint,
+      });
+      connectorDiagnostics[connector.id] = execution.diagnostics;
+      if (execution.diagnostics.status === "skipped") {
+        continue;
+      }
+      if (execution.error) {
+        const error = execution.error;
         providerErrors.push(connector.id);
         if (connector.id === "gmail") {
           const scanError = error instanceof GmailScanError ? error : null;
@@ -274,6 +348,17 @@ export async function executePublicAuditRun(
           userId,
           error: error instanceof Error ? error.message : String(error),
         });
+        continue;
+      }
+      const rows = execution.rows;
+      connectorRows[connector.id] = rows;
+      if (connector.id === "gmail") {
+        gmailDiagnostics = {
+          ...gmailDiagnostics,
+          code: rows.length > 0 ? "ok" : "scan_empty",
+          status: rows.length > 0 ? "ok" : "scan_empty",
+          candidatesDetected: rows.length,
+        };
       }
     }
     const serpRaw = connectorRows.serpapi ?? [];
@@ -284,11 +369,21 @@ export async function executePublicAuditRun(
     const usernameCheckRaw = connectorRows.username_check ?? [];
     const peopleSocialRaw = connectorRows.people_social ?? [];
     const emailIntelRaw = connectorRows.email_intel ?? [];
+    const maigretRaw = connectorRows.maigret ?? [];
+    const holeheRaw = connectorRows.holehe ?? [];
+    const userScannerRaw = connectorRows.user_scanner ?? [];
+    const urlscanRaw = connectorRows.urlscan ?? [];
+    const openSanctionsRaw = connectorRows.open_sanctions ?? [];
+    const serpFailed = providerErrors.includes("serpapi");
     const serpCorroboratedUrls = new Set(
       serpRaw.map((candidate) => normalizeCandidateUrl(candidate.url)).filter((u): u is string => Boolean(u)),
     );
-    usernameSurfaceRaw = keepOnlyCorroboratedGeneratedCandidates(usernameSurfaceRaw, serpCorroboratedUrls);
-    nameInferenceRaw = keepOnlyCorroboratedGeneratedCandidates(nameInferenceRaw, serpCorroboratedUrls);
+    usernameSurfaceRaw = keepOnlyCorroboratedGeneratedCandidates(usernameSurfaceRaw, serpCorroboratedUrls, {
+      allowUncorroboratedFallback: serpFailed,
+    });
+    nameInferenceRaw = keepOnlyCorroboratedGeneratedCandidates(nameInferenceRaw, serpCorroboratedUrls, {
+      allowUncorroboratedFallback: serpFailed,
+    });
     const providerCandidatesRaw = [
       ...serpRaw,
       ...breachRaw,
@@ -298,6 +393,11 @@ export async function executePublicAuditRun(
       ...usernameCheckRaw,
       ...peopleSocialRaw,
       ...emailIntelRaw,
+      ...maigretRaw,
+      ...holeheRaw,
+      ...userScannerRaw,
+      ...urlscanRaw,
+      ...openSanctionsRaw,
     ];
     const providerCandidates = applyBalancedQualityPass(providerCandidatesRaw);
     const baseline = baselineCandidatesFromSubmittedInput({
@@ -307,7 +407,7 @@ export async function executePublicAuditRun(
       websiteHint: run.websiteHint,
       locationHint: run.locationHint,
     });
-    const combined = providerCandidates.length > 0 ? providerCandidates : baseline;
+    const combined = mergeProviderAndBaselineCandidates(providerCandidates, baseline);
     if (combined.length === 0) {
       // Final guardrail for valid runs: ensure at least one candidate is available to review.
       combined.push({
@@ -343,10 +443,16 @@ export async function executePublicAuditRun(
       usernameCheckCandidates: usernameCheckRaw.length,
       peopleSocialCandidates: peopleSocialRaw.length,
       emailIntelCandidates: emailIntelRaw.length,
+      maigretCandidates: maigretRaw.length,
+      holeheCandidates: holeheRaw.length,
+      userScannerCandidates: userScannerRaw.length,
+      urlscanCandidates: urlscanRaw.length,
+      openSanctionsCandidates: openSanctionsRaw.length,
       providerErrors,
       baselineUsed: providerCandidates.length === 0,
       hibpSkippedNoApiKey: hibpSkippedReason === "no_api_key",
       gmailDiagnostics,
+      connectorDiagnostics,
     });
 
     await prisma.$transaction(
@@ -356,7 +462,7 @@ export async function executePublicAuditRun(
             data: rawToCreateData(runId, userId, r),
           });
 
-          if (r.confidenceBand === "high") {
+          if (shouldAutoImportCandidate(r)) {
             const result = await importPublicAuditCandidate(
               tx,
               userId,
@@ -396,12 +502,19 @@ export async function executePublicAuditRun(
       providerErrors,
       hibpSkippedReason,
     });
+    const exposureNarrative = buildExposureNarrative(combined);
     const existingMeta =
       run.metadata != null && typeof run.metadata === "object" && !Array.isArray(run.metadata)
         ? { ...(run.metadata as Record<string, unknown>) }
         : {};
     await publicAuditRepo.updatePublicAuditRun(userId, runId, {
-      metadata: { ...existingMeta, pipelineSummary, gmailDiagnostics } as Prisma.InputJsonValue,
+      metadata: {
+        ...existingMeta,
+        pipelineSummary,
+        gmailDiagnostics,
+        connectorDiagnostics,
+        exposureNarrative,
+      } as Prisma.InputJsonValue,
     });
 
     logInfo("public_audit_run_execution_completed", { userId, runId, createdCandidates: combined.length });

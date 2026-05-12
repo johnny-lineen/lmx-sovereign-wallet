@@ -85,17 +85,23 @@ const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefi
 
 /**
  * After `prisma generate`, new model delegates exist on the PrismaClient class. In dev, `globalThis.prisma`
- * can still hold an instance from before generate (singleton pattern), so delegates like `publicAuditRun`
- * are missing (`undefined`) until the process restarts. Drop the cache and build a fresh client.
+ * can still hold an instance from before generate (singleton pattern), so new delegates are `undefined`
+ * until the cache is dropped. Check every delegate the app relies on so each schema addition busts stale clients.
  */
-function prismaClientHasPublicAuditDelegates(client: PrismaClient): boolean {
-  return typeof (client as unknown as Record<string, unknown>).publicAuditRun === "object";
+function prismaClientHasExpectedDelegates(client: PrismaClient): boolean {
+  const c = client as unknown as Record<string, unknown>;
+  return typeof c.publicAuditRun === "object" && typeof c.productFeedback === "object";
 }
 
 let prismaCandidate = globalForPrisma.prisma ?? createPrismaClient();
-if (!prismaClientHasPublicAuditDelegates(prismaCandidate)) {
+if (!prismaClientHasExpectedDelegates(prismaCandidate)) {
   globalForPrisma.prisma = undefined;
   prismaCandidate = createPrismaClient();
+}
+if (!prismaClientHasExpectedDelegates(prismaCandidate)) {
+  throw new Error(
+    "Prisma client is out of date (missing model delegates). Stop `npm run dev`, run `npx prisma generate`, apply DB migrations if needed (`npx prisma migrate deploy`), then start the dev server again.",
+  );
 }
 
 export const prisma = prismaCandidate;

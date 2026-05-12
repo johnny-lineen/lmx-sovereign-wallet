@@ -11,6 +11,8 @@ import {
 
 export const CANDIDATE_SCAN_MAX_MESSAGES = 2500;
 export const CANDIDATE_SCAN_FETCH_BATCH = 500;
+/** Gmail user quota is easy to blow with hundreds of parallel `messages.get`; stay well under typical limits. */
+export const CANDIDATE_SCAN_MESSAGE_GET_CONCURRENCY = 24;
 export const CANDIDATE_SCAN_QUERY = "newer_than:540d";
 
 export async function persistGmailConnectorAccessTokens(
@@ -27,6 +29,41 @@ export async function persistGmailConnectorAccessTokens(
 
 function cleanSnippet(snippet: string): string {
   return snippet.replace(/\s+/g, " ").trim().slice(0, 300);
+}
+
+/**
+ * Fetches message metadata with bounded parallelism so large scans (thousands of IDs)
+ * do not open hundreds of concurrent Gmail connections (slow, flaky, and quota-hostile).
+ */
+async function fetchGmailMessageMetasForIds(
+  gmail: ReturnType<typeof google.gmail>,
+  ids: string[],
+): Promise<GmailMessageMeta[]> {
+  if (ids.length === 0) return [];
+
+  const out: GmailMessageMeta[] = new Array(ids.length);
+  let nextIndex = 0;
+  const concurrency = Math.min(CANDIDATE_SCAN_MESSAGE_GET_CONCURRENCY, ids.length);
+
+  async function worker() {
+    while (true) {
+      const i = nextIndex++;
+      if (i >= ids.length) return;
+      const id = ids[i]!;
+      const res = await gmail.users.messages.get({
+        userId: "me",
+        id,
+        format: "metadata",
+        metadataHeaders: ["From", "Subject", "Date"],
+      });
+      const headers = res.data.payload?.headers ?? [];
+      const snippet = cleanSnippet(res.data.snippet ?? "");
+      out[i] = buildGmailMessageMeta(id, headers, snippet);
+    }
+  }
+
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  return out;
 }
 
 export async function fetchGmailMessageMetasForCandidateScan(
@@ -47,23 +84,9 @@ export async function fetchGmailMessageMetasForCandidateScan(
     const ids = refs.map((m) => m.id).filter((id): id is string => Boolean(id));
     if (ids.length === 0) break;
 
-    const detailResponses = await Promise.all(
-      ids.map((id) =>
-        gmail.users.messages.get({
-          userId: "me",
-          id,
-          format: "metadata",
-          metadataHeaders: ["From", "Subject", "Date"],
-        }),
-      ),
-    );
-
-    for (let i = 0; i < detailResponses.length; i += 1) {
-      const res = detailResponses[i]!;
-      const id = ids[i]!;
-      const headers = res.data.payload?.headers ?? [];
-      const snippet = cleanSnippet(res.data.snippet ?? "");
-      metas.push(buildGmailMessageMeta(id, headers, snippet));
+    const batchMetas = await fetchGmailMessageMetasForIds(gmail, ids);
+    for (const meta of batchMetas) {
+      metas.push(meta);
       if (metas.length >= CANDIDATE_SCAN_MAX_MESSAGES) break;
     }
 

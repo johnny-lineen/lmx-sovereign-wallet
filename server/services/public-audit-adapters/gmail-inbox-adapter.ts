@@ -32,8 +32,109 @@ function cappedScoreForAudit(score: number): number {
  * Public audit needs broad but still user-tied inbox coverage for the "quick footprint" UX.
  * Keep this lower than import-job threshold, because review step is explicit in public audit.
  */
-const AUDIT_MIN_CANDIDATE_CONFIDENCE = 0.18;
-const MAX_GMAIL_AUDIT_CANDIDATES = 24;
+const AUDIT_MIN_CANDIDATE_CONFIDENCE = 0.12;
+const MAX_GMAIL_AUDIT_CANDIDATES = 60;
+const SOCIAL_PROVIDER_DOMAINS = new Set([
+  "linkedin.com",
+  "x.com",
+  "twitter.com",
+  "facebook.com",
+  "instagram.com",
+  "tiktok.com",
+  "reddit.com",
+  "github.com",
+  "youtube.com",
+  "discord.com",
+  "snapchat.com",
+]);
+const BROKER_PROVIDER_DOMAINS = new Set([
+  "whitepages.com",
+  "spokeo.com",
+  "beenverified.com",
+  "truthfinder.com",
+  "peekyou.com",
+  "mylife.com",
+  "peoplefinder.com",
+  "radaris.com",
+  "fastpeoplesearch.com",
+  "truepeoplesearch.com",
+]);
+
+function normalizeDomain(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim().toLowerCase() : null;
+}
+
+function buildDerivedGmailCandidates(
+  ex: ExtractedCandidate,
+  score: number,
+  band: "low" | "medium",
+  matchedIdentifier: string,
+): RawPublicAuditCandidate[] {
+  const domain = normalizeDomain(ex.providerDomain);
+  if (!domain) return [];
+  const out: RawPublicAuditCandidate[] = [];
+  const summary = typeof ex.evidence.summary === "string" ? ex.evidence.summary : "";
+  if (SOCIAL_PROVIDER_DOMAINS.has(domain)) {
+    out.push({
+      sourceType: "public_profile_adapter",
+      sourceName: "Gmail social correlation",
+      proposedVaultType: "social_account",
+      title: `Social account signal: ${ex.title}`,
+      snippet: summary ? `Inbox evidence indicates social activity. ${summary}` : "Inbox evidence indicates social activity.",
+      matchedIdentifier,
+      confidenceBand: band,
+      confidenceScore: Math.min(0.79, score + 0.06),
+      auditKind: "profile",
+      rawData: {
+        provider: "gmail_inbox_derived",
+        derivedKind: "social_profile",
+        providerDomain: domain,
+        dedupeKey: ex.dedupeKey,
+      },
+    });
+  }
+  if (BROKER_PROVIDER_DOMAINS.has(domain)) {
+    out.push({
+      sourceType: "broker_presence_adapter",
+      sourceName: "Gmail broker correlation",
+      proposedVaultType: "custom",
+      title: `Data broker signal: ${ex.title}`,
+      snippet: summary
+        ? `Inbox evidence suggests data-broker presence. ${summary}`
+        : "Inbox evidence suggests possible data-broker presence.",
+      matchedIdentifier,
+      confidenceBand: band,
+      confidenceScore: Math.min(0.74, score + 0.05),
+      auditKind: "broker",
+      rawData: {
+        provider: "gmail_inbox_derived",
+        derivedKind: "broker_presence",
+        providerDomain: domain,
+        dedupeKey: ex.dedupeKey,
+      },
+    });
+  }
+  if (ex.suggestedType === "subscription") {
+    out.push({
+      sourceType: "gmail_subscription_adapter",
+      sourceName: "Gmail subscription signal",
+      proposedVaultType: "subscription",
+      title: `Subscription from inbox: ${ex.title}`,
+      snippet: summary || "Recurring service pattern inferred from inbox evidence.",
+      matchedIdentifier,
+      confidenceBand: band,
+      confidenceScore: Math.min(0.77, score + 0.04),
+      auditKind: "other",
+      rawData: {
+        provider: "gmail_inbox_derived",
+        derivedKind: "subscription",
+        providerDomain: domain,
+        dedupeKey: ex.dedupeKey,
+      },
+    });
+  }
+  return out;
+}
 
 export async function fetchGmailInboxAuditCandidates(
   internalUserId: string,
@@ -62,12 +163,13 @@ export async function fetchGmailInboxAuditCandidates(
 
   scored.sort((a, b) => b.rawScore - a.rawScore);
   const out: RawPublicAuditCandidate[] = [];
+  const dedupe = new Set<string>();
   for (const { ex, rawScore } of scored.slice(0, MAX_GMAIL_AUDIT_CANDIDATES)) {
 
     const score = cappedScoreForAudit(rawScore);
     const band = confidenceBandForPublicAudit(rawScore);
 
-    out.push({
+    const baseCandidate: RawPublicAuditCandidate = {
       sourceType: "gmail_inbox_adapter",
       sourceName: "Gmail inbox",
       proposedVaultType: ex.suggestedType as VaultItemType,
@@ -95,8 +197,21 @@ export async function fetchGmailInboxAuditCandidates(
           tieReason: "gmail_connector_address_match",
         },
       },
-    });
+    };
+    const baseKey = `${baseCandidate.sourceType}|${baseCandidate.title.toLowerCase()}|${baseCandidate.matchedIdentifier ?? ""}`;
+    if (!dedupe.has(baseKey)) {
+      dedupe.add(baseKey);
+      out.push(baseCandidate);
+    }
+
+    const derived = buildDerivedGmailCandidates(ex, score, band, matchedIdentifier);
+    for (const candidate of derived) {
+      const key = `${candidate.sourceType}|${candidate.title.toLowerCase()}|${candidate.matchedIdentifier ?? ""}`;
+      if (dedupe.has(key)) continue;
+      dedupe.add(key);
+      out.push(candidate);
+    }
   }
 
-  return out;
+  return out.slice(0, MAX_GMAIL_AUDIT_CANDIDATES);
 }

@@ -1,6 +1,8 @@
-import type { DemoAccountCountEstimate, DemoFootprintGoal } from "@prisma/client";
+import { Prisma, type DemoAccountCountEstimate, type DemoFootprintGoal } from "@prisma/client";
 
+import { FEEDBACK_THEME_LABELS } from "@/lib/validations/feedback";
 import * as demoRequestRepo from "@/server/repositories/demo-request.repository";
+import * as feedbackRepo from "@/server/repositories/feedback.repository";
 
 const footprintGoalLabels: Record<DemoFootprintGoal, string> = {
   privacy: "Privacy",
@@ -149,4 +151,69 @@ function formatSourceLabel(source: string) {
     .filter(Boolean)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(" ");
+}
+
+export async function getDevOpsFeedbackSummary() {
+  const now = new Date();
+  const since7 = new Date(now);
+  since7.setUTCDate(since7.getUTCDate() - 7);
+  since7.setUTCHours(0, 0, 0, 0);
+  const since28 = new Date(now);
+  since28.setUTCDate(since28.getUTCDate() - 28);
+  since28.setUTCHours(0, 0, 0, 0);
+
+  try {
+    const [total7d, total28d, themeGroups, surfaceGroups, recent] = await Promise.all([
+      feedbackRepo.countProductFeedbackSince(since7),
+      feedbackRepo.countProductFeedbackSince(since28),
+      feedbackRepo.countProductFeedbackByThemeSince(since7),
+      feedbackRepo.countProductFeedbackBySurfaceSince(since7),
+      feedbackRepo.listRecentProductFeedbackWithUser(50),
+    ]);
+
+    const themes7d = themeGroups
+      .map((g) => ({
+        key: g.theme,
+        label: FEEDBACK_THEME_LABELS[g.theme],
+        count: g._count._all,
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    const surfaces7d = surfaceGroups
+      .map((g) => ({ label: g.surface, count: g._count._all }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 15);
+
+    const recentRows = recent.map((r) => ({
+      id: r.id,
+      createdAt: r.createdAt,
+      theme: r.theme,
+      themeLabel: FEEDBACK_THEME_LABELS[r.theme],
+      surface: r.surface,
+      message: r.message,
+      rating: r.rating,
+      metadata: r.metadata,
+      userEmail: r.user.email,
+      clerkUserId: r.user.clerkUserId,
+    }));
+
+    return {
+      totals: { last7Days: total7d, last28Days: total28d },
+      themes7d,
+      surfaces7d,
+      recentRows,
+      migrationNeeded: false as const,
+    };
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2021") {
+      return {
+        totals: { last7Days: 0, last28Days: 0 },
+        themes7d: [],
+        surfaces7d: [],
+        recentRows: [],
+        migrationNeeded: true as const,
+      };
+    }
+    throw e;
+  }
 }

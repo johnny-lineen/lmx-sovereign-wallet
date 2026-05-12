@@ -6,6 +6,7 @@ import { Bot, LayoutDashboard, Layers, Lightbulb, Lock, Network, ServerCog, Sett
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { ProductFeedbackPanel } from "@/components/feedback/product-feedback-panel";
 import { SiteFooter } from "@/components/site-footer";
 import { cn } from "@/lib/utils";
 
@@ -90,6 +91,8 @@ export function AppShell({
         </main>
         {!isGraphWorkspace ? <SiteFooter variant="console" /> : null}
       </div>
+
+      <ProductFeedbackPanel />
     </div>
   );
 }

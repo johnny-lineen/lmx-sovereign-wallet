@@ -1,19 +1,32 @@
 import type { ComponentType } from "react";
-import { Activity, BarChart3, Gauge, Layers, Radio, Terminal } from "lucide-react";
+import { Activity, BarChart3, Gauge, Layers, MessageSquareText, Radio, Terminal } from "lucide-react";
 
-import type { getDevOpsDemoMetrics } from "@/server/services/dev-ops.service";
+import type { getDevOpsDemoMetrics, getDevOpsFeedbackSummary } from "@/server/services/dev-ops.service";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 type DevOpsMetrics = Awaited<ReturnType<typeof getDevOpsDemoMetrics>>;
+type DevOpsFeedback = Awaited<ReturnType<typeof getDevOpsFeedbackSummary>>;
 
 const cardSurface =
   "border-white/[0.08] bg-gradient-to-b from-white/[0.06] to-white/[0.02] shadow-[0_0_50px_-16px_rgba(34,211,238,0.22)] backdrop-blur-sm";
 
-export function DevOpsDashboard({ metrics }: { metrics: DevOpsMetrics }) {
+/** Pixel cap for bars; parent uses matching h-* so layout stays aligned with Tailwind scale. */
+const SIGNUP_BAR_MAX_PX = 120;
+
+export function DevOpsDashboard({ metrics, feedback }: { metrics: DevOpsMetrics; feedback: DevOpsFeedback }) {
   const { totals, pace, signupsByDay, distributions, recentEntries } = metrics;
   const peakCount = Math.max(0, ...signupsByDay.map((d) => d.count));
-  const maxDay = Math.max(1, peakCount);
   const activity = recentEntries.slice(0, 24);
+
+  function barHeightPx(count: number): number {
+    if (peakCount === 0) {
+      return 4;
+    }
+    if (count === 0) {
+      return 2;
+    }
+    return Math.max(6, Math.round((count / peakCount) * SIGNUP_BAR_MAX_PX));
+  }
 
   return (
     <div className="space-y-8">
@@ -64,21 +77,22 @@ export function DevOpsDashboard({ metrics }: { metrics: DevOpsMetrics }) {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex h-36 items-end gap-0.5 sm:gap-1">
+            {/* Fixed row height + pixel bar heights: % heights inside nested flex columns often resolve to ~0. */}
+            <div className="flex h-[140px] items-end gap-0.5 sm:gap-1">
               {signupsByDay.map((d) => {
-                const hPct = maxDay > 0 ? Math.max(6, (d.count / maxDay) * 100) : 6;
+                const hPx = barHeightPx(d.count);
                 return (
                   <div
                     key={d.day}
                     className="group flex min-w-0 flex-1 flex-col items-center justify-end"
                     title={`${d.day}: ${d.count}`}
                   >
-                    <span className="mb-1 text-[10px] font-medium text-cyan-300/90 opacity-0 transition-opacity group-hover:opacity-100 sm:text-xs">
+                    <span className="mb-1 min-h-[1rem] text-[10px] font-medium text-cyan-300/90 opacity-0 transition-opacity group-hover:opacity-100 sm:text-xs">
                       {d.count > 0 ? d.count : ""}
                     </span>
                     <div
                       className="w-full max-w-[14px] rounded-t-sm bg-gradient-to-t from-cyan-500/25 to-cyan-400/80 ring-1 ring-cyan-400/15 sm:max-w-[18px]"
-                      style={{ height: `${hPct}%` }}
+                      style={{ height: `${hPx}px` }}
                     />
                   </div>
                 );
@@ -108,6 +122,112 @@ export function DevOpsDashboard({ metrics }: { metrics: DevOpsMetrics }) {
           />
           <DistributionCard title="Sources" items={distributions.sources} empty="No source tags yet." />
         </div>
+      </section>
+
+      <section className="space-y-3">
+        <SectionHeading
+          icon={MessageSquareText}
+          title="Product feedback"
+          subtitle="Authenticated in-app signals (last 7 days by topic and surface). Treat message and metadata as potentially sensitive."
+        />
+        {feedback.migrationNeeded ? (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/95">
+            <p className="font-medium text-amber-50">The ProductFeedback table is not in this database yet.</p>
+            <p className="mt-1 text-amber-200/90">
+              Use the same <code className="rounded bg-black/25 px-1 font-mono text-[11px] text-amber-50">DATABASE_URL</code> as the app, then run{" "}
+              <code className="rounded bg-black/25 px-1 font-mono text-[11px] text-amber-50">npx prisma migrate deploy</code>{" "}
+              (or <code className="rounded bg-black/25 px-1 font-mono text-[11px] text-amber-50">npx prisma migrate dev</code> locally). Reload this page after it succeeds.
+            </p>
+          </div>
+        ) : null}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <KpiTile
+            label="Feedback (7 days)"
+            value={feedback.totals.last7Days}
+            hint="All themes and surfaces"
+          />
+          <KpiTile
+            label="Feedback (28 days)"
+            value={feedback.totals.last28Days}
+            hint="Rolling month window"
+          />
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <DistributionCard
+            title="Themes (7 days)"
+            items={feedback.themes7d.map((t) => ({ label: t.label, count: t.count }))}
+            empty="No feedback in the last 7 days."
+          />
+          <DistributionCard
+            title="Surfaces (7 days)"
+            items={feedback.surfaces7d.map((s) => ({ label: s.label, count: s.count }))}
+            empty="No surface tags in the last 7 days."
+          />
+        </div>
+        <Card className={cardSurface}>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base text-white">Feedback stream</CardTitle>
+            <CardDescription className="text-slate-400">
+              {feedback.recentRows.length === 0
+                ? "No rows to show."
+                : `Latest ${feedback.recentRows.length} rows — expand a row for full message and metadata.`}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {feedback.recentRows.length > 0 ? (
+              <ul className="max-h-[min(520px,55vh)] divide-y divide-white/[0.06] overflow-y-auto">
+                {feedback.recentRows.map((row) => (
+                  <li key={row.id} className="px-4 py-3 sm:px-5">
+                    <details className="group">
+                      <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                          <span className="font-medium text-white">{row.themeLabel}</span>
+                          <span className="rounded border border-white/[0.08] px-1.5 py-0.5 font-mono text-[11px] text-violet-300/90">
+                            {row.surface}
+                          </span>
+                          <span className="shrink-0 font-mono text-[11px] text-slate-500">
+                            {formatUtcShort(row.createdAt)}
+                          </span>
+                          <span className="text-xs text-slate-500">
+                            {row.userEmail ?? row.clerkUserId ?? "—"}
+                            {row.rating != null ? (
+                              <span className="ml-2 text-slate-400">
+                                · rating{" "}
+                                <span className="text-cyan-300/90">
+                                  {row.rating === 1 ? "+1" : row.rating === -1 ? "−1" : "0"}
+                                </span>
+                              </span>
+                            ) : null}
+                          </span>
+                        </div>
+                        {row.message ? (
+                          <p className="mt-1 line-clamp-2 text-sm text-slate-400">{row.message}</p>
+                        ) : (
+                          <p className="mt-1 text-sm text-slate-500">No message text</p>
+                        )}
+                        <p className="mt-1 text-[11px] text-slate-500 group-open:hidden">Tap to expand</p>
+                      </summary>
+                      <div className="mt-3 space-y-2 border-t border-white/[0.06] pt-3">
+                        {row.message ? (
+                          <p className="whitespace-pre-wrap text-sm text-slate-300">{row.message}</p>
+                        ) : null}
+                        {row.metadata != null ? (
+                          <pre className="max-h-40 overflow-auto rounded-lg border border-white/[0.08] bg-black/40 p-2 font-mono text-[11px] leading-relaxed text-slate-400">
+                            {JSON.stringify(row.metadata, null, 2)}
+                          </pre>
+                        ) : (
+                          <p className="text-xs text-slate-500">No metadata</p>
+                        )}
+                      </div>
+                    </details>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="p-6 text-sm text-slate-400">No feedback rows yet.</p>
+            )}
+          </CardContent>
+        </Card>
       </section>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">

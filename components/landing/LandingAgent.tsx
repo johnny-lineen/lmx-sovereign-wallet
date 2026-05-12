@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { Orbit, Search } from "lucide-react";
+import { Orbit } from "lucide-react";
+
+import { LandingDemoGraph } from "@/components/landing/landing-demo-graph";
 
 const PLATFORM_CHIPS = ["GitHub", "X", "Reddit", "LinkedIn", "YouTube"] as const;
 const DEMO_RESULTS = [
@@ -168,6 +170,8 @@ export function LandingAgent() {
                 </article>
               ))}
             </div>
+
+            {demoStarted && !loading ? <LandingDemoGraph /> : null}
 
             <div className="flex flex-wrap justify-center gap-2 sm:justify-start">
               <button
