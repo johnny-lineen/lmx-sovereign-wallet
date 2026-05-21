@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { LEGAL_ROUTES } from "@/lib/legal-config";
 import { cn } from "@/lib/utils";
 
 type SiteFooterVariant = "landing" | "console";
@@ -7,6 +8,8 @@ type SiteFooterVariant = "landing" | "console";
 const footerLinks = [
   { href: "/sign-in", label: "Sign in" },
   { href: "/search", label: "Scan now" },
+  { href: LEGAL_ROUTES.privacy, label: "Privacy Policy" },
+  { href: LEGAL_ROUTES.terms, label: "Terms of Service" },
 ] as const;
 
 export function SiteFooter({ variant = "landing" }: { variant?: SiteFooterVariant }) {

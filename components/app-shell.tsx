@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 
 import { ProductFeedbackPanel } from "@/components/feedback/product-feedback-panel";
 import { SiteFooter } from "@/components/site-footer";
+import { LEGAL_ROUTES } from "@/lib/legal-config";
 import { cn } from "@/lib/utils";
 
 const nav = [
@@ -69,7 +70,21 @@ export function AppShell({
             })}
           </nav>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <nav className="hidden items-center gap-3 md:flex" aria-label="Legal">
+              <Link
+                href={LEGAL_ROUTES.privacy}
+                className="text-xs font-medium text-slate-500 transition-colors hover:text-slate-200"
+              >
+                Privacy
+              </Link>
+              <Link
+                href={LEGAL_ROUTES.terms}
+                className="text-xs font-medium text-slate-500 transition-colors hover:text-slate-200"
+              >
+                Terms
+              </Link>
+            </nav>
             <UserButton />
           </div>
         </div>

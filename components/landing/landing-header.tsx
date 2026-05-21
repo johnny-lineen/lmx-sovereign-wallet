@@ -5,6 +5,7 @@ import { Menu, X } from "lucide-react";
 import { useState } from "react";
 
 import { buttonVariants } from "@/components/ui/button-variants";
+import { LEGAL_ROUTES } from "@/lib/legal-config";
 import { cn } from "@/lib/utils";
 
 const consoleHref = "/sign-in";
@@ -69,6 +70,24 @@ export function LandingHeader() {
                 >
                   Create account
                 </Link>
+                <Link
+                  href={LEGAL_ROUTES.privacy}
+                  className={cn(
+                    buttonVariants({ variant: "ghost", size: "sm" }),
+                    "w-full justify-center text-muted-foreground sm:w-auto",
+                  )}
+                >
+                  Privacy
+                </Link>
+                <Link
+                  href={LEGAL_ROUTES.terms}
+                  className={cn(
+                    buttonVariants({ variant: "ghost", size: "sm" }),
+                    "w-full justify-center text-muted-foreground sm:w-auto",
+                  )}
+                >
+                  Terms
+                </Link>
               </div>
             </div>
           </details>
@@ -112,6 +131,26 @@ export function LandingHeader() {
               onClick={() => setOpen(false)}
             >
               Create account
+            </Link>
+            <Link
+              href={LEGAL_ROUTES.privacy}
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "lg" }),
+                "w-full justify-center text-muted-foreground",
+              )}
+              onClick={() => setOpen(false)}
+            >
+              Privacy Policy
+            </Link>
+            <Link
+              href={LEGAL_ROUTES.terms}
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "lg" }),
+                "w-full justify-center text-muted-foreground",
+              )}
+              onClick={() => setOpen(false)}
+            >
+              Terms of Service
             </Link>
           </nav>
         </div>
