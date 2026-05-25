@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { Layers } from "lucide-react";
 
-import { LEGAL_ROUTES } from "@/lib/legal-config";
 import { cn } from "@/lib/utils";
 
 export function LandingTopBar() {
@@ -20,31 +19,15 @@ export function LandingTopBar() {
           </span>
         </Link>
 
-        <div className="flex shrink-0 items-center gap-3 sm:gap-4">
-          <nav className="flex items-center gap-2 sm:gap-3" aria-label="Legal">
-            <Link
-              href={LEGAL_ROUTES.privacy}
-              className="text-[11px] font-medium uppercase tracking-wide text-slate-400 transition-colors hover:text-white"
-            >
-              Privacy
-            </Link>
-            <Link
-              href={LEGAL_ROUTES.terms}
-              className="text-[11px] font-medium uppercase tracking-wide text-slate-400 transition-colors hover:text-white"
-            >
-              Terms
-            </Link>
-          </nav>
-          <Link
-            href="/sign-in"
-            className={cn(
-              "inline-flex h-9 shrink-0 items-center justify-center rounded-full px-5 text-xs font-bold uppercase tracking-wide text-black sm:h-9 sm:px-6 sm:text-[11px]",
-              "bg-gradient-to-br from-cyan-400 via-cyan-500 to-teal-600 shadow-[0_0_20px_-4px_rgba(34,211,238,0.35)] transition-[transform,box-shadow] hover:shadow-[0_0_28px_-2px_rgba(34,211,238,0.5)] motion-safe:hover:scale-[1.02]",
-            )}
-          >
-            Scan now
-          </Link>
-        </div>
+        <Link
+          href="/sign-in"
+          className={cn(
+            "inline-flex h-9 shrink-0 items-center justify-center rounded-full px-5 text-xs font-bold uppercase tracking-wide text-black sm:h-9 sm:px-6 sm:text-[11px]",
+            "bg-gradient-to-br from-cyan-400 via-cyan-500 to-teal-600 shadow-[0_0_20px_-4px_rgba(34,211,238,0.35)] transition-[transform,box-shadow] hover:shadow-[0_0_28px_-2px_rgba(34,211,238,0.5)] motion-safe:hover:scale-[1.02]",
+          )}
+        >
+          Scan now
+        </Link>
       </div>
     </header>
   );

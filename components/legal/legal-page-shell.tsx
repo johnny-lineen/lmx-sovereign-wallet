@@ -2,27 +2,19 @@ import Link from "next/link";
 import { Layers } from "lucide-react";
 
 import { SiteFooter } from "@/components/site-footer";
-import { LEGAL_CONFIG, LEGAL_ROUTES } from "@/lib/legal-config";
-import { cn } from "@/lib/utils";
-
-const legalNav = [
-  { href: LEGAL_ROUTES.privacy, label: "Privacy Policy" },
-  { href: LEGAL_ROUTES.terms, label: "Terms of Service" },
-] as const;
+import { LEGAL_CONFIG } from "@/lib/legal-config";
 
 export function LegalPageShell({
   title,
   children,
-  active,
 }: {
   title: string;
   children: React.ReactNode;
-  active: keyof typeof LEGAL_ROUTES;
 }) {
   return (
     <div className="flex min-h-dvh flex-col bg-[#05070a] text-slate-200">
       <header className="sticky top-0 z-50 shrink-0 border-b border-white/[0.06] bg-[#05070a]/85 backdrop-blur-md supports-[backdrop-filter]:bg-[#05070a]/75">
-        <div className="mx-auto flex h-12 w-full max-w-4xl items-center justify-between gap-3 px-5 sm:h-14 sm:px-8">
+        <div className="mx-auto flex h-12 w-full max-w-4xl items-center px-5 sm:h-14 sm:px-8">
           <Link href="/" className="group flex min-w-0 items-center gap-2.5">
             <span className="flex size-8 items-center justify-center rounded-lg border border-cyan-500/20 bg-cyan-500/5 text-cyan-400 transition-colors group-hover:border-cyan-400/35">
               <Layers className="size-4" aria-hidden />
@@ -31,25 +23,6 @@ export function LegalPageShell({
               {LEGAL_CONFIG.productName}
             </span>
           </Link>
-
-          <nav className="flex shrink-0 items-center gap-3 sm:gap-4" aria-label="Legal">
-            {legalNav.map((link) => {
-              const isActive = link.href === LEGAL_ROUTES[active];
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={cn(
-                    "text-[11px] font-medium uppercase tracking-wide transition-colors sm:text-xs",
-                    isActive ? "text-cyan-300" : "text-slate-400 hover:text-white",
-                  )}
-                  aria-current={isActive ? "page" : undefined}
-                >
-                  {link.label}
-                </Link>
-              );
-            })}
-          </nav>
         </div>
       </header>
 
