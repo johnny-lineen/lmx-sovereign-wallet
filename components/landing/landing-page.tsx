@@ -63,7 +63,7 @@ export function LandingPage() {
                 className="flex flex-col items-center gap-4 sm:flex-row sm:flex-nowrap sm:justify-center lg:justify-start"
               >
                 <Link
-                  href="/sign-in"
+                  href="/scan"
                   className={cn(
                     "inline-flex h-12 min-w-[11rem] items-center justify-center rounded-full px-8",
                     "bg-gradient-to-br from-cyan-400 via-cyan-500 to-teal-600 text-sm font-bold uppercase tracking-wide text-black",

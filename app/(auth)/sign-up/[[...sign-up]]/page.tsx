@@ -13,8 +13,8 @@ export default function SignUpPage() {
       routing="path"
       path="/sign-up"
       signInUrl="/sign-in"
-      forceRedirectUrl="/search"
-      fallbackRedirectUrl="/search"
+      forceRedirectUrl="/scan"
+      fallbackRedirectUrl="/scan"
       initialValues={email ? { emailAddress: email } : undefined}
     />
   );

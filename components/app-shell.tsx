@@ -2,7 +2,7 @@
 
 import { UserButton } from "@clerk/nextjs";
 import { useUser } from "@clerk/nextjs";
-import { Bot, LayoutDashboard, Layers, Lightbulb, Lock, Network, ServerCog, Settings } from "lucide-react";
+import { LayoutDashboard, Layers, Lock, Network, Radar, ServerCog, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -12,10 +12,9 @@ import { cn } from "@/lib/utils";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/scan", label: "Scan", icon: Radar },
   { href: "/vault", label: "Vault", icon: Lock },
   { href: "/graph", label: "Graph", icon: Network },
-  { href: "/insights", label: "Insights", icon: Lightbulb },
-  { href: "/agent", label: "Agent", icon: Bot },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
 

@@ -329,7 +329,7 @@ export function LandingMarketingSections() {
               price: "Coming soon",
               blurb: "Higher scan limits, priority runs, and advanced export controls.",
               cta: "Scan now",
-              href: "/sign-up",
+              href: "/scan",
               highlight: true,
             },
             {
@@ -377,7 +377,7 @@ export function LandingMarketingSections() {
           <h2 className="font-heading text-3xl font-semibold tracking-tight text-white sm:text-4xl">Start scanning.</h2>
           <p className="mt-4 text-lg text-slate-400">Create an account or join the waitlist to map and secure your footprint.</p>
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <Link href="/sign-up" className={ctaGradient}>
+            <Link href="/scan" className={ctaGradient}>
               Scan now
             </Link>
             <Link

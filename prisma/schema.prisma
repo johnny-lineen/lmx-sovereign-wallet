@@ -158,6 +158,7 @@ model User {
   publicAuditRuns       PublicAuditRun[]
   publicAuditCandidates PublicAuditCandidate[]
   productFeedback       ProductFeedback[]
+  breachScans           BreachScan[]
 }
 
 /// Sovereign identity node; one root identity per user is ensured at bootstrap.
@@ -434,6 +435,19 @@ model ProductFeedback {
   @@index([theme])
   @@index([surface])
   @@index([userId, createdAt])
+}
+
+/// HIBP breach lookup result for a user email address.
+model BreachScan {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email     String
+  breaches  Json
+  scannedAt DateTime @default(now())
+
+  @@unique([userId, email])
+  @@index([userId])
 }
 
 /// Anonymous/early-access intake from landing page before full product activation.

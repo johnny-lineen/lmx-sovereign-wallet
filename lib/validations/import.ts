@@ -7,8 +7,9 @@ export const profileEmailAnchorBodySchema = z.object({
 });
 
 export const startImportJobSchema = z.object({
-  gmailConnectorId: z.string().uuid(),
-  profileEmail: profileEmailSchema,
+  gmailConnectorIds: z.array(z.string().uuid()).min(1),
+  /** Optional; each job uses its connector Gmail address when omitted. */
+  profileEmail: profileEmailSchema.optional(),
 });
 
 export type StartImportJobInput = z.infer<typeof startImportJobSchema>;

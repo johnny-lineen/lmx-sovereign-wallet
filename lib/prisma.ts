@@ -90,7 +90,11 @@ const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefi
  */
 function prismaClientHasExpectedDelegates(client: PrismaClient): boolean {
   const c = client as unknown as Record<string, unknown>;
-  return typeof c.publicAuditRun === "object" && typeof c.productFeedback === "object";
+  return (
+    typeof c.publicAuditRun === "object" &&
+    typeof c.productFeedback === "object" &&
+    typeof c.breachScan === "object"
+  );
 }
 
 let prismaCandidate = globalForPrisma.prisma ?? createPrismaClient();

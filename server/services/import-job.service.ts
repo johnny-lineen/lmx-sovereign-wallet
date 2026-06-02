@@ -12,6 +12,8 @@ import {
   fetchGmailMessageMetasForCandidateScan,
   persistGmailConnectorAccessTokens,
 } from "@/server/services/gmail-inbox-scan.shared";
+import { autoApproveImportCandidatesForJob } from "@/server/services/import-approval.service";
+import { consolidateUserFootprintForClerkUser } from "@/server/services/footprint-consolidation.service";
 import { aggregateImportCandidatesFromMessages } from "@/server/services/import-candidate-extraction.service";
 import {
   buildImportRowsFromExtracted,
@@ -44,6 +46,7 @@ export type RunImportJobResult =
       dedupedCandidates: number;
       messagesScanned: number;
       profileEmailItemId: string;
+      vaultItemsCreated: number;
     }
   | {
       ok: false;
@@ -58,6 +61,11 @@ export type RunImportJobResult =
       message?: string;
       retryAfterSeconds?: number;
     };
+
+export type RunImportJobsBatchResult = {
+  connectorId: string;
+  result: RunImportJobResult;
+};
 
 export async function scanGmailForCandidates(userId: string): Promise<GmailScanCandidate[]> {
   const inbox = await fetchGmailInboxExtractedForUser(userId);
@@ -83,15 +91,15 @@ export async function scanGmailForCandidates(userId: string): Promise<GmailScanC
 
 export async function runGmailImportJob(
   clerkUserId: string,
-  input: { gmailConnectorId: string; profileEmail: string },
+  input: { gmailConnectorId: string; profileEmail?: string; skipCooldown?: boolean },
 ): Promise<RunImportJobResult> {
   const user = await userRepo.findUserByClerkId(clerkUserId);
   if (!user) return { ok: false, code: "USER_NOT_FOUND" };
 
   const connector = await gmailImportRepo.findGmailConnectorWithSecretForUser(user.id, input.gmailConnectorId);
   if (!connector) return { ok: false, code: "CONNECTOR_NOT_FOUND" };
-  const normalizedProfileEmail = input.profileEmail.trim().toLowerCase();
   const connectorAddress = connector.gmailAddress.trim().toLowerCase();
+  const normalizedProfileEmail = (input.profileEmail?.trim() || connector.gmailAddress).toLowerCase();
   if (connectorAddress !== normalizedProfileEmail) {
     return {
       ok: false,
@@ -101,7 +109,7 @@ export async function runGmailImportJob(
   }
 
   const latestJob = await gmailImportRepo.findMostRecentImportJobForUser(user.id);
-  if (latestJob?.startedAt) {
+  if (!input.skipCooldown && latestJob?.startedAt) {
     const elapsed = Date.now() - latestJob.startedAt.getTime();
     const retryAfterMs = IMPORT_SCAN_COOLDOWN_MS - elapsed;
     if (retryAfterMs > 0) {
@@ -114,7 +122,7 @@ export async function runGmailImportJob(
     }
   }
 
-  const ensured = await vaultService.ensureEmailVaultItemForClerkUser(clerkUserId, input.profileEmail);
+  const ensured = await vaultService.ensureEmailVaultItemForClerkUser(clerkUserId, connector.gmailAddress);
   if (!ensured.ok) {
     return {
       ok: false,
@@ -154,6 +162,12 @@ export async function runGmailImportJob(
     const inserted = await gmailImportRepo.createImportCandidatesSkipDuplicates(rows);
     const skippedDuplicate = Math.max(0, rows.length - inserted);
 
+    const { approvedCount: vaultItemsCreated, vaultItemIds } = await autoApproveImportCandidatesForJob(
+      clerkUserId,
+      job.id,
+      profileEmailItemId,
+    );
+
     await gmailImportRepo.patchImportJob(user.id, job.id, {
       status: "completed",
       completedAt: new Date(),
@@ -172,9 +186,11 @@ export async function runGmailImportJob(
         candidatesInserted: inserted,
         candidatesDeduped: skippedDuplicate,
         candidatesSkippedDuplicate: skippedDuplicate,
+        vaultItemsCreated,
+        autoApprovedToVault: true,
         diagnostics: {
-          status: metas.length > 0 ? "ok" : "scan_empty",
-          code: metas.length > 0 ? "ok" : "scan_empty",
+          status: metas.length > 0 ? (inserted > 0 || vaultItemsCreated > 0 ? "ok" : "no_candidates") : "scan_empty",
+          code: metas.length > 0 ? (inserted > 0 || vaultItemsCreated > 0 ? "ok" : "no_candidates") : "scan_empty",
           connectorAddress,
           submittedEmail: normalizedProfileEmail,
           strictEmailMatch: true,
@@ -193,7 +209,10 @@ export async function runGmailImportJob(
       dedupedCandidates: skippedDuplicate,
       messagesScanned: metas.length,
       profileEmailItemId,
+      vaultItemsCreated,
     };
+    await consolidateUserFootprintForClerkUser(clerkUserId);
+
     logInfo("gmail_import_job_completed", {
       userId: user.id,
       jobId: job.id,
@@ -201,6 +220,8 @@ export async function runGmailImportJob(
       detectedCandidates: rows.length,
       dedupedCandidates: skippedDuplicate,
       messagesScanned: metas.length,
+      vaultItemsCreated,
+      vaultItemIds: vaultItemIds.length,
     });
     return response;
   } catch (e) {
@@ -246,6 +267,28 @@ export async function runGmailImportJob(
     });
     return { ok: false, code: errorCode, message };
   }
+}
+
+export async function runGmailImportJobs(
+  clerkUserId: string,
+  input: { gmailConnectorIds: string[]; profileEmail?: string },
+): Promise<RunImportJobsBatchResult[]> {
+  const results: RunImportJobsBatchResult[] = [];
+  for (const gmailConnectorId of input.gmailConnectorIds) {
+    const result = await runGmailImportJob(clerkUserId, {
+      gmailConnectorId,
+      profileEmail: input.profileEmail,
+      skipCooldown: true,
+    });
+    results.push({ connectorId: gmailConnectorId, result });
+  }
+
+  const anyOk = results.some((r) => r.result.ok);
+  if (anyOk) {
+    await consolidateUserFootprintForClerkUser(clerkUserId);
+  }
+
+  return results;
 }
 
 export async function listImportJobsDTO(clerkUserId: string) {

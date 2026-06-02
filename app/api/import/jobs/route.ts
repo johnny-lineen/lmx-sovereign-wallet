@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { startImportJobSchema } from "@/lib/validations/import";
-import { listImportJobsDTO, runGmailImportJob } from "@/server/services/import-job.service";
+import { listImportJobsDTO, runGmailImportJobs } from "@/server/services/import-job.service";
 
 export async function GET() {
   const { userId } = await auth();
@@ -45,22 +45,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const result = await runGmailImportJob(userId, parsed.data);
-  if (!result.ok) {
-    const status =
-      result.code === "USER_NOT_FOUND"
-        ? 404
-        : result.code === "IMPORT_COOLDOWN"
-          ? 429
-          : result.code === "GMAIL_REAUTH_REQUIRED"
-            ? 400
-          : result.code === "CONNECTOR_NOT_FOUND" ||
-              result.code === "PROFILE_EMAIL_INVALID" ||
-              result.code === "EMAIL_MISMATCH"
-          ? 400
-          : 502;
-    return NextResponse.json(
-      {
+  const results = await runGmailImportJobs(userId, parsed.data);
+  return NextResponse.json({
+    results: results.map(({ connectorId, result }) => {
+      if (result.ok) {
+        return {
+          connectorId,
+          ok: true,
+          jobId: result.jobId,
+          detectedCandidates: result.detectedCandidates,
+          insertedCandidates: result.insertedCandidates,
+          dedupedCandidates: result.dedupedCandidates,
+          messagesScanned: result.messagesScanned,
+          profileEmailItemId: result.profileEmailItemId,
+          vaultItemsCreated: result.vaultItemsCreated,
+        };
+      }
+      return {
+        connectorId,
+        ok: false,
         error: result.code,
         message:
           result.code === "GMAIL_ERROR"
@@ -69,19 +72,9 @@ export async function POST(request: Request) {
               ? "Gmail connection expired. Reconnect Gmail, then run scan again."
               : result.code === "EMAIL_MISMATCH"
                 ? "Connected Gmail must exactly match the submitted profile email."
-              : result.message,
+                : result.message,
         retryAfterSeconds: result.retryAfterSeconds,
-      },
-      { status },
-    );
-  }
-
-  return NextResponse.json({
-    jobId: result.jobId,
-    detectedCandidates: result.detectedCandidates,
-    insertedCandidates: result.insertedCandidates,
-    dedupedCandidates: result.dedupedCandidates,
-    messagesScanned: result.messagesScanned,
-    profileEmailItemId: result.profileEmailItemId,
+      };
+    }),
   });
 }

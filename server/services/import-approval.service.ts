@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { ReviewImportCandidatesInput } from "@/lib/validations/import";
 import * as gmailImportRepo from "@/server/repositories/gmail-import.repository";
+import * as identityRepo from "@/server/repositories/identity.repository";
 import * as userRepo from "@/server/repositories/user.repository";
 import * as vaultRepo from "@/server/repositories/vault.repository";
 
@@ -116,6 +117,8 @@ export async function reviewImportCandidates(
   );
   if (!emailItem) return { ok: false, code: "EMAIL_ITEM_INVALID" };
 
+  const rootIdentity = await identityRepo.findRootIdentityByUserId(user.id);
+
   const approvedItemIds: string[] = [];
   let claimedSkippedCount = 0;
 
@@ -152,6 +155,7 @@ export async function reviewImportCandidates(
         const item = await tx.vaultItem.create({
           data: {
             userId: user.id,
+            lmxIdentityId: rootIdentity?.id ?? null,
             type: c.suggestedType,
             title: c.title,
             summary: summaryParts.join(" — "),
@@ -189,4 +193,29 @@ export async function reviewImportCandidates(
   );
 
   return { ok: true, approvedItemIds, rejectedCount: 0, skippedCount: skippedCount + claimedSkippedCount };
+}
+
+/** Promote all pending candidates from a completed import job into vault items (no manual review). */
+export async function autoApproveImportCandidatesForJob(
+  clerkUserId: string,
+  jobId: string,
+  emailVaultItemId: string,
+): Promise<{ approvedCount: number; vaultItemIds: string[] }> {
+  const user = await userRepo.findUserByClerkId(clerkUserId);
+  if (!user) return { approvedCount: 0, vaultItemIds: [] };
+
+  const pending = await gmailImportRepo.listImportCandidatesForUser(user.id, {
+    importJobId: jobId,
+    status: "pending",
+  });
+  if (pending.length === 0) return { approvedCount: 0, vaultItemIds: [] };
+
+  const result = await reviewImportCandidates(clerkUserId, {
+    action: "approve",
+    candidateIds: pending.map((c) => c.id),
+    emailVaultItemId,
+  });
+
+  if (!result.ok) return { approvedCount: 0, vaultItemIds: [] };
+  return { approvedCount: result.approvedItemIds.length, vaultItemIds: result.approvedItemIds };
 }

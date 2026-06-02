@@ -7,7 +7,7 @@ type SiteFooterVariant = "landing" | "console";
 
 const footerLinks = [
   { href: "/sign-in", label: "Sign in" },
-  { href: "/search", label: "Scan now" },
+  { href: "/scan", label: "Scan now" },
   { href: LEGAL_ROUTES.privacy, label: "Privacy Policy" },
   { href: LEGAL_ROUTES.terms, label: "Terms of Service" },
 ] as const;

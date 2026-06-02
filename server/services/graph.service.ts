@@ -7,6 +7,7 @@ import type {
 import { vaultItemMergeGroupKey } from "@/lib/entity-unify";
 import type { VaultItemDTO } from "@/server/services/vault.service";
 import { getVaultLibraryForClerkUser } from "@/server/services/vault.service";
+import * as gmailImportRepo from "@/server/repositories/gmail-import.repository";
 import * as userRepo from "@/server/repositories/user.repository";
 
 const SUMMARY_PREVIEW_MAX = 160;
@@ -116,13 +117,13 @@ function graphNodeMatchesNormalizedEmail(n: GraphNodePayload, normalized: string
 function resolveAnchorEmailNodeId(
   nodes: GraphNodePayload[],
   edges: GraphEdgePayload[],
-  userEmailNormalized: string | null,
+  preferredEmailsNormalized: string[],
 ): string | null {
   const emails = nodes.filter((n) => n.type === "email");
   if (emails.length === 0) return null;
 
-  if (userEmailNormalized) {
-    const match = emails.find((n) => graphNodeMatchesNormalizedEmail(n, userEmailNormalized));
+  for (const preferred of preferredEmailsNormalized) {
+    const match = emails.find((n) => graphNodeMatchesNormalizedEmail(n, preferred));
     if (match) return match.id;
   }
 
@@ -245,7 +246,16 @@ export async function getGraphPayloadForClerkUser(clerkUserId: string): Promise<
   if (!library) return null;
 
   const user = await userRepo.findUserByClerkId(clerkUserId);
-  const userEmailNorm = user?.email?.trim().toLowerCase() ?? null;
+  const preferredEmails: string[] = [];
+  const clerkNorm = user?.email?.trim().toLowerCase();
+  if (clerkNorm) preferredEmails.push(clerkNorm);
+  if (user) {
+    const connectors = await gmailImportRepo.listGmailConnectorsForUser(user.id);
+    for (const c of connectors) {
+      const norm = c.gmailAddress.trim().toLowerCase();
+      if (norm && !preferredEmails.includes(norm)) preferredEmails.push(norm);
+    }
+  }
 
   const itemIds = new Set(library.items.map((i) => i.id));
   const rawEdges: GraphEdgePayload[] = library.relationships
@@ -258,11 +268,7 @@ export async function getGraphPayloadForClerkUser(clerkUserId: string): Promise<
     }));
 
   const collapsed = collapseDuplicateEntityNodes(library.items, rawEdges);
-  const anchorEmailNodeId = resolveAnchorEmailNodeId(
-    collapsed.nodes,
-    collapsed.edges,
-    userEmailNorm,
-  );
+  const anchorEmailNodeId = resolveAnchorEmailNodeId(collapsed.nodes, collapsed.edges, preferredEmails);
   const overview = buildOverview(collapsed.nodes, collapsed.edges);
   return {
     overview: { ...overview, anchorEmailNodeId },

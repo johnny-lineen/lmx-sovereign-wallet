@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
   const returnTo =
     typeof returnToRaw === "string" && returnToRaw.startsWith("/") && !returnToRaw.startsWith("//")
       ? returnToRaw
-      : "/vault";
+      : "/scan";
   const returnUrl = new URL(returnTo, redirectBase);
 
   if (oauthError) {
@@ -92,12 +92,17 @@ export async function GET(request: NextRequest) {
     return res;
   }
 
-  let refreshToken = tokens.refresh_token ?? null;
   const existingConnector = await gmailImportRepo.findGmailConnectorByUserAndAddress(user.id, gmailAddress);
-  if (!refreshToken && existingConnector?.refreshToken) {
-    refreshToken = existingConnector.refreshToken;
+  if (existingConnector) {
+    returnUrl.searchParams.set("gmail_connected", "1");
+    returnUrl.searchParams.set("connectorId", existingConnector.id);
+    const res = NextResponse.redirect(returnUrl);
+    res.cookies.delete(STATE_COOKIE);
+    res.cookies.delete(RETURN_TO_COOKIE);
+    return res;
   }
 
+  const refreshToken = tokens.refresh_token ?? null;
   if (!refreshToken) {
     returnUrl.searchParams.set("gmail_error", "no_refresh_token");
     const res = NextResponse.redirect(returnUrl);
@@ -108,7 +113,7 @@ export async function GET(request: NextRequest) {
 
   const scopeStr = Array.isArray(tokens.scope) ? tokens.scope.join(" ") : (tokens.scope ?? null);
 
-  await gmailImportRepo.upsertGmailConnectorForUser(user.id, {
+  const connector = await gmailImportRepo.upsertGmailConnectorForUser(user.id, {
     gmailAddress,
     refreshToken,
     accessToken: tokens.access_token ?? null,
@@ -117,6 +122,7 @@ export async function GET(request: NextRequest) {
   });
 
   returnUrl.searchParams.set("gmail_connected", "1");
+  returnUrl.searchParams.set("connectorId", connector.id);
   const res = NextResponse.redirect(returnUrl);
   res.cookies.delete(STATE_COOKIE);
   res.cookies.delete(RETURN_TO_COOKIE);

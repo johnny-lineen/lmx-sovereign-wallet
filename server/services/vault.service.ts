@@ -1,8 +1,10 @@
 import { inferEmailProviderFromAddress } from "@/lib/infer-email-provider";
 import { profileEmailSchema } from "@/lib/validations/import";
 import type { VaultItemListRow } from "@/server/repositories/vault.repository";
+import * as identityRepo from "@/server/repositories/identity.repository";
 import * as userRepo from "@/server/repositories/user.repository";
 import * as vaultRepo from "@/server/repositories/vault.repository";
+import { prisma } from "@/lib/prisma";
 
 export type VaultItemDTO = {
   id: string;
@@ -107,8 +109,15 @@ export async function ensureEmailVaultItemForClerkUser(
   if (!user) return { ok: false, code: "USER_NOT_FOUND" };
 
   const emailItems = await vaultRepo.listVaultItemsByTypeForUser(user.id, "email");
+  const rootIdentity = await identityRepo.findRootIdentityByUserId(user.id);
   const existing = emailItems.find((row) => vaultItemMatchesNormalizedEmail(row, normalizedEmail));
   if (existing) {
+    if (rootIdentity) {
+      await prisma.vaultItem.updateMany({
+        where: { id: existing.id, userId: user.id },
+        data: { lmxIdentityId: rootIdentity.id },
+      });
+    }
     return { ok: true, vaultItemId: existing.id, created: false, normalizedEmail };
   }
 
@@ -123,6 +132,12 @@ export async function ensureEmailVaultItemForClerkUser(
       inferredProvider: key,
     },
   });
+  if (rootIdentity) {
+    await prisma.vaultItem.updateMany({
+      where: { id: created.id, userId: user.id },
+      data: { lmxIdentityId: rootIdentity.id },
+    });
+  }
 
   return { ok: true, vaultItemId: created.id, created: true, normalizedEmail };
 }

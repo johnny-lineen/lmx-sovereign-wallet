@@ -20,7 +20,7 @@ export function LandingTopBar() {
         </Link>
 
         <Link
-          href="/sign-in"
+          href="/scan"
           className={cn(
             "inline-flex h-9 shrink-0 items-center justify-center rounded-full px-5 text-xs font-bold uppercase tracking-wide text-black sm:h-9 sm:px-6 sm:text-[11px]",
             "bg-gradient-to-br from-cyan-400 via-cyan-500 to-teal-600 shadow-[0_0_20px_-4px_rgba(34,211,238,0.35)] transition-[transform,box-shadow] hover:shadow-[0_0_28px_-2px_rgba(34,211,238,0.5)] motion-safe:hover:scale-[1.02]",

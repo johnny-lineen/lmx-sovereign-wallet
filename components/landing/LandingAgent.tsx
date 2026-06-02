@@ -183,7 +183,7 @@ export function LandingAgent() {
                 Replay demo
               </button>
               <Link
-                href="/sign-in"
+                href="/scan"
                 className="inline-flex h-10 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 via-cyan-500 to-teal-600 px-5 text-xs font-bold uppercase tracking-wide text-black shadow-[0_0_28px_-4px_rgba(34,211,238,0.45)] transition hover:shadow-[0_0_36px_-2px_rgba(34,211,238,0.55)]"
               >
                 Scan now

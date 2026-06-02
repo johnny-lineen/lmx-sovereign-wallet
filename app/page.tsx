@@ -6,7 +6,7 @@ import { LandingPage } from "@/components/landing/landing-page";
 export default async function HomePage() {
   const { userId } = await auth();
   if (userId) {
-    redirect("/search");
+    redirect("/scan");
   }
 
   return <LandingPage />;

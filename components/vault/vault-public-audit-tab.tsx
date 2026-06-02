@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ScanOnboardingHint } from "@/components/vault/scan-onboarding-hint";
@@ -20,6 +20,7 @@ import {
   pipelineLabel,
   type PublicAuditPipelineId,
 } from "@/lib/public-audit-pipelines";
+import { loadScanWizardConfig } from "@/lib/scan-wizard";
 import { dispatchVaultDataChanged } from "@/lib/vault-changed-event";
 import { cn } from "@/lib/utils";
 
@@ -185,6 +186,7 @@ function compactNumber(value: number): string {
 
 export function VaultPublicAuditTab({ highlightRunId }: { highlightRunId: string | null }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [runs, setRuns] = useState<RunRow[] | null>(null);
   const [runsError, setRunsError] = useState<string | null>(null);
@@ -238,6 +240,25 @@ export function VaultPublicAuditTab({ highlightRunId }: { highlightRunId: string
   useEffect(() => {
     setShowAuditHint(shouldShowScanOnboardingHint(SCAN_ONBOARDING_KEYS.publicAudit));
   }, []);
+
+  useEffect(() => {
+    if (searchParams.get("fromScan") !== "1") return;
+    const saved = loadScanWizardConfig();
+    if (!saved) return;
+
+    setEmail(saved.primaryEmail);
+    setFullName(`${saved.firstName} ${saved.lastName}`.trim());
+    setCityState(saved.cityState);
+    setBanner({
+      kind: "ok",
+      text: "Scan setup saved from onboarding. Review your details below, then run the audit when scan execution is wired up.",
+    });
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("fromScan");
+    const q = params.toString();
+    router.replace(q ? `/vault?${q}` : "/vault?tab=audit", { scroll: false });
+  }, [router, searchParams]);
 
   useEffect(() => {
     const sync = () => {
